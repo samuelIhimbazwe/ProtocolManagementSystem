@@ -4,9 +4,9 @@ Internal church **protocol ministry** app: roster, scheduling, attendance, and r
 
 | Path | Purpose |
 |------|---------|
-| [`DEPLOYMENT.md`](DEPLOYMENT.md) | **Run as a real system** (build + single server) |
-| [`server/README.md`](server/README.md) | API, auth, SQLite, seed accounts |
-| [`prototype/`](prototype/) | React UI (Vite) |
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | **Production:** Render (API) + Vercel (web) + Neon (DB) |
+| [`server/README.md`](server/README.md) | API, auth, SQLite/Postgres, seed accounts |
+| [`prototype/`](prototype/) | React UI (Vite) — deploy root for Vercel |
 | [`ROADMAP.md`](ROADMAP.md) | Backlog & milestones |
 | [`design/`](design/) | Figma handoff & tokens |
 

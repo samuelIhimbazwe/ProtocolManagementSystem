@@ -1,19 +1,23 @@
 # PMSS API (M1 pilot foundation)
 
-Express + SQLite API for auth, user accounts, and schedule draft/publish.
+Express API for auth, scheduling, attendance, finance, and reports.
 
-Uses Node’s built-in [`node:sqlite`](https://nodejs.org/api/sqlite.html) (no native build tools). Requires **Node.js 22.14+** (you may see an experimental SQLite warning — safe for local pilot).
+- **Local default:** SQLite via Node [`node:sqlite`](https://nodejs.org/api/sqlite.html) (Node **22.14+**)
+- **Production:** Postgres via `DATABASE_URL` (Neon) — see [`../DEPLOYMENT.md`](../DEPLOYMENT.md) for Render + Vercel
 
 ## Setup
 
 ```bash
 cd server
+cp .env.example .env
 npm install
 npm run seed    # optional — auto-seeds on first start
 npm run dev
 ```
 
 Default URL: `http://localhost:3001`
+
+**Postgres (Neon):** set `DATABASE_URL` in `.env`. Schema is created on startup.
 
 **Reseed (wipes pilot data):** `npm run seed -- --force` — creates draft + **published V1** so members can read the schedule immediately.
 
@@ -52,6 +56,6 @@ Password for all: **`Password123!`**
 | POST | `/users` | Invite account · `PATCH /users/:id` status/role |
 | GET | `/config/pilot` | Pilot `today` date (`PMSS_TODAY`) |
 
-Database file: `server/data/pmss.sqlite`
+Database: SQLite at `server/data/pmss.sqlite` when `DATABASE_URL` is unset; otherwise Neon/Postgres.
 
-Set `JWT_SECRET` in production.
+Set `JWT_SECRET` in production. For split hosting set `SERVE_WEB=0` and `CORS_ORIGIN` to the Vercel URL.
