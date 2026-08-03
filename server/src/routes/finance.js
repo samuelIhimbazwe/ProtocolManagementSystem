@@ -1,9 +1,81 @@
 import { Router } from 'express'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { v4 as uuid } from 'uuid'
 import { db, audit } from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
 
 const router = Router()
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const EVIDENCE_DIR = path.join(__dirname, '..', 'data', 'uploads', 'evidence')
+const MAX_EVIDENCE_BYTES = 5 * 1024 * 1024
+const ALLOWED_EVIDENCE_MIME = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+])
+
+function ensureEvidenceDir() {
+  if (!fs.existsSync(EVIDENCE_DIR)) fs.mkdirSync(EVIDENCE_DIR, { recursive: true })
+}
+
+function extensionForEvidence(name, mime) {
+  const fromName = path.extname(String(name ?? '')).toLowerCase()
+  if (fromName && fromName.length <= 8) return fromName
+  const byMime = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'application/pdf': '.pdf',
+    'application/msword': '.doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  }
+  return byMime[mime] ?? ''
+}
+
+function saveEvidenceFile(submissionId, evidenceFile) {
+  if (!evidenceFile || typeof evidenceFile !== 'object') return null
+  const name = String(evidenceFile.name ?? '').trim().slice(0, 180)
+  const mime = String(evidenceFile.mimeType ?? evidenceFile.mime ?? '').trim().toLowerCase()
+  const raw = String(evidenceFile.dataBase64 ?? evidenceFile.data ?? '')
+  if (!name || !mime || !raw) return null
+  if (!ALLOWED_EVIDENCE_MIME.has(mime)) {
+    const err = new Error('Evidence file type not allowed (use image, PDF, or Word doc)')
+    err.status = 400
+    throw err
+  }
+  const base64 = raw.replace(/^data:[^;]+;base64,/, '')
+  let buf
+  try {
+    buf = Buffer.from(base64, 'base64')
+  } catch {
+    const err = new Error('Invalid evidence file data')
+    err.status = 400
+    throw err
+  }
+  if (!buf.length) return null
+  if (buf.length > MAX_EVIDENCE_BYTES) {
+    const err = new Error('Evidence file too large (max 5 MB)')
+    err.status = 400
+    throw err
+  }
+  ensureEvidenceDir()
+  const safeName = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+  const stored = `${submissionId}${extensionForEvidence(safeName, mime)}`
+  const abs = path.join(EVIDENCE_DIR, stored)
+  fs.writeFileSync(abs, buf)
+  return {
+    fileName: safeName,
+    mime,
+    relativePath: path.join('uploads', 'evidence', stored).replace(/\\/g, '/'),
+  }
+}
 
 const VIEW_ROLES = new Set([
   'president',
@@ -93,6 +165,9 @@ function mapSubmission(row) {
     paymentMethodId: row.payment_method_id,
     paymentMethodLabel: row.payment_method_label ?? null,
     evidenceNote: row.evidence_note,
+    evidenceFileName: row.evidence_file_name ?? null,
+    evidenceFileMime: row.evidence_file_mime ?? null,
+    hasEvidenceFile: Boolean(row.evidence_file_path),
     status: row.status,
     verificationNote: row.verification_note,
     submittedAt: row.submitted_at,
@@ -532,11 +607,18 @@ router.post('/submissions', authMiddleware, (req, res) => {
   if (!Number.isFinite(claimed) || claimed <= 0) return res.status(400).json({ error: 'Invalid amount' })
 
   const id = uuid()
+  let savedEvidence = null
+  try {
+    savedEvidence = saveEvidenceFile(id, b.evidenceFile)
+  } catch (err) {
+    return res.status(err.status ?? 400).json({ error: err.message ?? 'Invalid evidence file' })
+  }
+
   db.prepare(
     `INSERT INTO contribution_submissions
      (id, contribution_type_id, member_id, payment_date, claimed_amount, payment_method_id,
-      evidence_note, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      evidence_note, evidence_file_name, evidence_file_mime, evidence_file_path, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
   ).run(
     id,
     b.contributionTypeId,
@@ -545,8 +627,16 @@ router.post('/submissions', authMiddleware, (req, res) => {
     claimed,
     b.paymentMethodId ?? null,
     b.evidenceNote ?? null,
+    savedEvidence?.fileName ?? null,
+    savedEvidence?.mime ?? null,
+    savedEvidence?.relativePath ?? null,
   )
-  audit('finance.submission.create', req.auth.sub, { id, memberId, claimed })
+  audit('finance.submission.create', req.auth.sub, {
+    id,
+    memberId,
+    claimed,
+    hasEvidenceFile: Boolean(savedEvidence),
+  })
   const row = db
     .prepare(
       `SELECT s.*, t.name AS contribution_name, m.name AS member_name, m.phone AS member_phone
@@ -557,6 +647,26 @@ router.post('/submissions', authMiddleware, (req, res) => {
     )
     .get(id)
   return res.status(201).json({ submission: mapSubmission(row) })
+})
+
+router.get('/submissions/:id/evidence', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VIEW_ROLES)) return
+  const sub = db.prepare(`SELECT * FROM contribution_submissions WHERE id = ?`).get(req.params.id)
+  if (!sub) return res.status(404).json({ error: 'Not found' })
+  if (req.auth.role === 'member' && sub.member_id !== req.auth.memberId) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+  if (!sub.evidence_file_path) return res.status(404).json({ error: 'No evidence file' })
+
+  const abs = path.join(__dirname, '..', 'data', sub.evidence_file_path)
+  if (!fs.existsSync(abs)) return res.status(404).json({ error: 'Evidence file missing' })
+
+  res.setHeader('Content-Type', sub.evidence_file_mime || 'application/octet-stream')
+  res.setHeader(
+    'Content-Disposition',
+    `inline; filename="${String(sub.evidence_file_name ?? 'evidence').replace(/"/g, '')}"`,
+  )
+  return res.sendFile(abs)
 })
 
 router.post('/submissions/:id/verify', authMiddleware, (req, res) => {
@@ -611,7 +721,6 @@ router.post('/submissions/:id/verify', authMiddleware, (req, res) => {
     ensureFollowUp(sub.id, sub.claimed_amount, note.trim(), req.auth.sub)
   }
 
-  audit('finance.submission.verify', req.auth.sub, { id: sub.id, action })
   const row = db
     .prepare(
       `SELECT s.*, t.name AS contribution_name, m.name AS member_name, m.phone AS member_phone,
@@ -623,6 +732,18 @@ router.post('/submissions/:id/verify', authMiddleware, (req, res) => {
        WHERE s.id = ?`,
     )
     .get(sub.id)
+
+  audit('finance.submission.verify', req.auth.sub, {
+    id: sub.id,
+    action,
+    memberName: row?.member_name,
+    contributionName: row?.contribution_name,
+    summary:
+      row?.member_name && row?.contribution_name
+        ? `${row.member_name} · ${row.contribution_name}`
+        : undefined,
+  })
+
   return res.json({ submission: mapSubmission(row) })
 })
 

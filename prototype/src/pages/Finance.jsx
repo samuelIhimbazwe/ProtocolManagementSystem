@@ -22,6 +22,7 @@ import {
   closeContributionType,
   fetchPaymentMethods,
   createPaymentMethod,
+  updatePaymentMethod,
   deactivatePaymentMethod,
   fetchSubmissions,
   createSubmission,
@@ -29,6 +30,7 @@ import {
   fetchFollowups,
   updateFollowup,
   fetchFinanceReports,
+  openSubmissionEvidence,
 } from '../api/finance'
 import {
   formatRwf,
@@ -36,6 +38,18 @@ import {
   SUBMISSION_STATUS_LABEL,
   FREQUENCY_LABEL,
 } from '../lib/money'
+import {
+  FINANCE_REPORT_BLOCKS,
+  FINANCE_REPORT_PRESETS,
+  defaultIncludeMap,
+  slugifyTitle,
+} from '../lib/reportBuilder'
+import {
+  downloadFinanceReportsCsv,
+  downloadFinanceReportsExcel,
+  downloadFinanceReportsPdf,
+} from '../lib/financeReportExport'
+import ReportBuilder from '../components/ReportBuilder'
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview', icon: Wallet },
@@ -57,6 +71,62 @@ function statusBadge(status) {
           ? 'primary'
           : 'error'
   return <Badge variant={variant}>{SUBMISSION_STATUS_LABEL[status] ?? status}</Badge>
+}
+
+const EVIDENCE_ACCEPT =
+  'image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+function readEvidenceFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      resolve(null)
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      reject(new Error('Evidence file too large (max 5 MB)'))
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      const comma = result.indexOf(',')
+      const dataBase64 = comma >= 0 ? result.slice(comma + 1) : result
+      resolve({
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        dataBase64,
+      })
+    }
+    reader.onerror = () => reject(new Error('Could not read evidence file'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function EvidenceCell({ row, onOpen, onError }) {
+  const hasFile = row.hasEvidenceFile || row.evidenceFileName
+  const note = row.evidenceNote
+  if (!hasFile && !note) return '—'
+  return (
+    <div className="space-y-0.5 max-w-[14rem]">
+      {hasFile && (
+        <button
+          type="button"
+          className="text-xs font-medium text-primary-700 hover:text-primary-800 text-left truncate block w-full"
+          title={row.evidenceFileName ?? 'Open evidence'}
+          onClick={async () => {
+            try {
+              await onOpen(row.id)
+            } catch (err) {
+              onError?.(err.message ?? 'Could not open evidence')
+            }
+          }}
+        >
+          {row.evidenceFileName ?? 'View file'}
+        </button>
+      )}
+      {note && <p className="text-xs text-neutral-600 truncate" title={note}>{note}</p>}
+    </div>
+  )
 }
 
 function ProgressBar({ pct }) {
@@ -121,6 +191,9 @@ export default function FinancePage() {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState('')
   const [error, setError] = useState('')
+  const [builderTitle, setBuilderTitle] = useState('Finance Report')
+  const [builderSubtitle, setBuilderSubtitle] = useState('')
+  const [builderInclude, setBuilderInclude] = useState(() => defaultIncludeMap(FINANCE_REPORT_BLOCKS))
 
   const [payOpen, setPayOpen] = useState(false)
   const [payForm, setPayForm] = useState({
@@ -129,6 +202,8 @@ export default function FinancePage() {
     claimedAmount: '',
     paymentMethodId: '',
     evidenceNote: '',
+    evidenceFile: null,
+    evidenceFileLabel: '',
   })
 
   const [typeOpen, setTypeOpen] = useState(false)
@@ -144,15 +219,67 @@ export default function FinancePage() {
     startDate: '2026-08-01',
   })
 
-  const [methodOpen, setMethodOpen] = useState(false)
-  const [methodForm, setMethodForm] = useState({
+  const emptyMethodForm = {
+    id: null,
     kind: 'mobile_money',
     label: '',
     provider: '',
     accountName: '',
     accountNumber: '',
     instructions: '',
-  })
+    active: true,
+  }
+
+  const [methodOpen, setMethodOpen] = useState(false)
+  const [methodForm, setMethodForm] = useState(emptyMethodForm)
+
+  const openNewMethod = () => {
+    setMethodForm({ ...emptyMethodForm })
+    setMethodOpen(true)
+  }
+
+  const openEditMethod = (m) => {
+    setMethodForm({
+      id: m.id,
+      kind: m.kind || 'mobile_money',
+      label: m.label || '',
+      provider: m.provider || '',
+      accountName: m.accountName || '',
+      accountNumber: m.accountNumber || '',
+      instructions: m.instructions || '',
+      active: m.active !== false,
+    })
+    setMethodOpen(true)
+  }
+
+  const saveMethod = async () => {
+    if (!methodForm.label?.trim()) {
+      showToast('Label is required')
+      return
+    }
+    try {
+      const body = {
+        kind: methodForm.kind,
+        label: methodForm.label.trim(),
+        provider: methodForm.provider || null,
+        accountName: methodForm.accountName || null,
+        accountNumber: methodForm.accountNumber || null,
+        instructions: methodForm.instructions || null,
+        active: methodForm.active,
+      }
+      if (methodForm.id) {
+        await updatePaymentMethod(methodForm.id, body)
+        showToast('Payment method updated')
+      } else {
+        await createPaymentMethod(body)
+        showToast('Payment method added')
+      }
+      setMethodOpen(false)
+      load()
+    } catch (err) {
+      showToast(err.message ?? 'Could not save method')
+    }
+  }
 
   const [verifyModal, setVerifyModal] = useState(null)
   const [verifyForm, setVerifyForm] = useState({ action: 'confirm', receivedAmount: '', note: '' })
@@ -160,6 +287,49 @@ export default function FinancePage() {
   const showToast = (msg) => {
     setToast(msg)
     setTimeout(() => setToast(''), 2800)
+  }
+
+  const financeExportBundle = useMemo(() => {
+    const pending = (submissions ?? []).filter((s) => s.status === 'pending')
+    const confirmed = (submissions ?? []).filter((s) => s.status === 'confirmed')
+    return {
+      ...(reports ?? {}),
+      overview: summary?.leadership ?? null,
+      leadership: summary?.leadership ?? null,
+      publicGoals: summary?.publicGoals ?? [],
+      types,
+      methods,
+      pending,
+      confirmed,
+      followups,
+    }
+  }, [reports, summary, types, methods, submissions, followups])
+
+  const exportFinanceReport = (format) => {
+    if (!reports) {
+      showToast('Reports not loaded yet')
+      return
+    }
+    try {
+      const opts = {
+        title: builderTitle.trim() || 'Finance Report',
+        subtitle: builderSubtitle.trim(),
+        include: builderInclude,
+      }
+      const stamp = slugifyTitle(opts.title)
+      if (format === 'csv') {
+        downloadFinanceReportsCsv(financeExportBundle, `pmss-finance-report-${stamp}.csv`, opts)
+        showToast('Report downloaded (CSV)')
+      } else if (format === 'excel') {
+        downloadFinanceReportsExcel(financeExportBundle, `pmss-finance-report-${stamp}.xls`, opts)
+        showToast('Report downloaded (Excel)')
+      } else if (format === 'pdf') {
+        downloadFinanceReportsPdf(financeExportBundle, opts)
+        showToast('Use Print → Save as PDF')
+      }
+    } catch (err) {
+      showToast(err.message ?? 'Export failed')
+    }
   }
 
   const load = useCallback(async () => {
@@ -231,9 +401,17 @@ export default function FinancePage() {
         claimedAmount: amount,
         paymentMethodId: payForm.paymentMethodId || undefined,
         evidenceNote: payForm.evidenceNote || undefined,
+        evidenceFile: payForm.evidenceFile || undefined,
       })
       showToast('Contribution submitted — pending verification')
       setPayOpen(false)
+      setPayForm((f) => ({
+        ...f,
+        claimedAmount: '',
+        evidenceNote: '',
+        evidenceFile: null,
+        evidenceFileLabel: '',
+      }))
       load()
     } catch (err) {
       showToast(err.message ?? 'Submit failed')
@@ -258,17 +436,6 @@ export default function FinancePage() {
       load()
     } catch (err) {
       showToast(err.message ?? 'Could not create type')
-    }
-  }
-
-  const saveMethod = async () => {
-    try {
-      await createPaymentMethod(methodForm)
-      showToast('Payment method added')
-      setMethodOpen(false)
-      load()
-    } catch (err) {
-      showToast(err.message ?? 'Could not add method')
     }
   }
 
@@ -328,7 +495,7 @@ export default function FinancePage() {
         </p>
       )}
 
-      <div className="flex flex-wrap gap-1 mb-6 p-1 rounded-xl bg-neutral-100/80 border border-neutral-200/80 pmss-no-print">
+      <div className="pmss-tab-rail mb-6 p-1 rounded-xl bg-neutral-100/80 border border-neutral-200/80 pmss-no-print">
         {visibleSections.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -462,6 +629,13 @@ export default function FinancePage() {
                         render: (r) => (r.confirmedAmount != null ? formatRwf(r.confirmedAmount) : '—'),
                       },
                       { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
+                      {
+                        key: 'evidence',
+                        label: 'Evidence',
+                        render: (r) => (
+                          <EvidenceCell row={r} onOpen={openSubmissionEvidence} onError={showToast} />
+                        ),
+                      },
                     ]}
                     rows={submissions}
                     emptyTitle="No submissions yet"
@@ -554,9 +728,12 @@ export default function FinancePage() {
           {section === 'methods' && (
             <div className="space-y-4">
               {canManageMethods && (
-                <button type="button" className="pmss-btn-primary text-sm h-9" onClick={() => setMethodOpen(true)}>
+                <button type="button" className="pmss-btn-primary text-sm h-9" onClick={openNewMethod}>
                   <Plus className="w-4 h-4" /> Add method
                 </button>
+              )}
+              {!canManageMethods && (
+                <p className="text-sm text-neutral-500">Payment details for members. Only the treasurer can edit them.</p>
               )}
               <div className="grid sm:grid-cols-2 gap-4">
                 {methods.map((m) => (
@@ -568,42 +745,63 @@ export default function FinancePage() {
                       </Badge>
                     </div>
                     <dl className="text-sm mt-3 space-y-1 text-neutral-600">
-                      {m.provider && (
-                        <div className="flex justify-between">
-                          <dt>Provider</dt>
-                          <dd>{m.provider}</dd>
-                        </div>
-                      )}
-                      {m.accountName && (
-                        <div className="flex justify-between gap-2">
-                          <dt>Account name</dt>
-                          <dd className="text-right">{m.accountName}</dd>
-                        </div>
-                      )}
-                      {m.accountNumber && (
-                        <div className="flex justify-between">
-                          <dt>Number</dt>
-                          <dd className="tabular-nums">{m.accountNumber}</dd>
-                        </div>
-                      )}
+                      <div className="flex justify-between gap-2">
+                        <dt>Provider</dt>
+                        <dd className="text-right">{m.provider || '—'}</dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <dt>Account name</dt>
+                        <dd className="text-right">{m.accountName || '—'}</dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <dt>Number</dt>
+                        <dd className="tabular-nums text-right">{m.accountNumber || '—'}</dd>
+                      </div>
                     </dl>
                     {m.instructions && <p className="text-xs text-neutral-500 mt-3">{m.instructions}</p>}
-                    {canManageMethods && m.active !== false && (
-                      <button
-                        type="button"
-                        className="text-xs font-medium text-red-700 mt-3"
-                        onClick={async () => {
-                          try {
-                            await deactivatePaymentMethod(m.id)
-                            showToast('Method deactivated')
-                            load()
-                          } catch (e) {
-                            showToast(e.message)
-                          }
-                        }}
-                      >
-                        Deactivate
-                      </button>
+                    {canManageMethods && (
+                      <div className="flex flex-wrap gap-3 mt-4 pt-3 border-t border-neutral-100">
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-primary-700"
+                          onClick={() => openEditMethod(m)}
+                        >
+                          Edit details
+                        </button>
+                        {m.active !== false ? (
+                          <button
+                            type="button"
+                            className="text-xs font-medium text-red-700"
+                            onClick={async () => {
+                              try {
+                                await deactivatePaymentMethod(m.id)
+                                showToast('Method deactivated')
+                                load()
+                              } catch (e) {
+                                showToast(e.message)
+                              }
+                            }}
+                          >
+                            Deactivate
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="text-xs font-medium text-emerald-700"
+                            onClick={async () => {
+                              try {
+                                await updatePaymentMethod(m.id, { active: true })
+                                showToast('Method reactivated')
+                                load()
+                              } catch (e) {
+                                showToast(e.message)
+                              }
+                            }}
+                          >
+                            Reactivate
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -626,6 +824,13 @@ export default function FinancePage() {
                     render: (r) => (r.confirmedAmount != null ? formatRwf(r.confirmedAmount) : '—'),
                   },
                   { key: 'status', label: 'Status', render: (r) => statusBadge(r.status) },
+                  {
+                    key: 'evidence',
+                    label: 'Evidence',
+                    render: (r) => (
+                      <EvidenceCell row={r} onOpen={openSubmissionEvidence} onError={showToast} />
+                    ),
+                  },
                   { key: 'submittedAt', label: 'Submitted', render: (r) => r.submittedAt?.slice?.(0, 10) ?? '—' },
                   { key: 'confirmedAt', label: 'Confirmed', render: (r) => r.confirmedAt?.slice?.(0, 10) ?? '—' },
                   { key: 'verifiedByName', label: 'Verified by', render: (r) => r.verifiedByName ?? '—' },
@@ -670,7 +875,13 @@ export default function FinancePage() {
                   { key: 'contributionName', label: 'Type' },
                   { key: 'paymentDate', label: 'Date' },
                   { key: 'claimedAmount', label: 'Claimed', render: (r) => formatRwf(r.claimedAmount) },
-                  { key: 'evidenceNote', label: 'Evidence', render: (r) => r.evidenceNote || '—' },
+                  {
+                    key: 'evidence',
+                    label: 'Evidence',
+                    render: (r) => (
+                      <EvidenceCell row={r} onOpen={openSubmissionEvidence} onError={showToast} />
+                    ),
+                  },
                   {
                     key: 'actions',
                     label: '',
@@ -742,6 +953,20 @@ export default function FinancePage() {
 
           {section === 'reports' && reports && (
             <div className="space-y-6">
+              <ReportBuilder
+                title={builderTitle}
+                onTitleChange={setBuilderTitle}
+                subtitle={builderSubtitle}
+                onSubtitleChange={setBuilderSubtitle}
+                blocks={FINANCE_REPORT_BLOCKS}
+                include={builderInclude}
+                onIncludeChange={setBuilderInclude}
+                presets={FINANCE_REPORT_PRESETS}
+                onExport={exportFinanceReport}
+                disabled={loading}
+                hint="Build a full finance pack or a focused export — KPIs, collections, members, ledger, and exceptions."
+              />
+
               <ReportPreview
                 title="Collection by type"
                 to="/finance/reports/collection"
@@ -889,13 +1114,57 @@ export default function FinancePage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Evidence note (optional)</label>
+            <label className="block text-sm font-medium mb-1">Evidence (optional)</label>
             <textarea
               className="pmss-input h-20 py-2"
               value={payForm.evidenceNote}
               onChange={(e) => setPayForm((f) => ({ ...f, evidenceNote: e.target.value }))}
               placeholder="MoMo transaction ID, bank slip reference…"
             />
+            <div className="mt-2">
+              <label className="block text-xs font-medium text-neutral-600 mb-1">
+                Attach image or document
+              </label>
+              <input
+                type="file"
+                accept={EVIDENCE_ACCEPT}
+                className="block w-full text-sm text-neutral-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-primary-50 file:text-primary-800 hover:file:bg-primary-100"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) {
+                    setPayForm((f) => ({ ...f, evidenceFile: null, evidenceFileLabel: '' }))
+                    return
+                  }
+                  try {
+                    const evidenceFile = await readEvidenceFile(file)
+                    setPayForm((f) => ({
+                      ...f,
+                      evidenceFile,
+                      evidenceFileLabel: file.name,
+                    }))
+                  } catch (err) {
+                    e.target.value = ''
+                    showToast(err.message ?? 'Could not attach file')
+                    setPayForm((f) => ({ ...f, evidenceFile: null, evidenceFileLabel: '' }))
+                  }
+                }}
+              />
+              <p className="text-xs text-neutral-500 mt-1.5">
+                JPG, PNG, WebP, GIF, PDF, or Word · max 5 MB
+                {payForm.evidenceFileLabel ? ` · Selected: ${payForm.evidenceFileLabel}` : ''}
+              </p>
+              {payForm.evidenceFileLabel && (
+                <button
+                  type="button"
+                  className="text-xs font-medium text-red-700 mt-1"
+                  onClick={() =>
+                    setPayForm((f) => ({ ...f, evidenceFile: null, evidenceFileLabel: '' }))
+                  }
+                >
+                  Remove attachment
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </Modal>
@@ -904,6 +1173,7 @@ export default function FinancePage() {
         open={typeOpen}
         onClose={() => setTypeOpen(false)}
         title="New contribution type"
+        wide
         footer={
           <>
             <button type="button" className="pmss-btn-secondary" onClick={() => setTypeOpen(false)}>
@@ -966,14 +1236,15 @@ export default function FinancePage() {
       <Modal
         open={methodOpen}
         onClose={() => setMethodOpen(false)}
-        title="Add payment method"
+        title={methodForm.id ? 'Edit payment method' : 'Add payment method'}
+        description="Update the details members see when paying contributions."
         footer={
           <>
             <button type="button" className="pmss-btn-secondary" onClick={() => setMethodOpen(false)}>
               Cancel
             </button>
             <button type="button" className="pmss-btn-primary" onClick={saveMethod}>
-              Save
+              {methodForm.id ? 'Save changes' : 'Add method'}
             </button>
           </>
         }
@@ -992,18 +1263,41 @@ export default function FinancePage() {
               <option value="other">Other</option>
             </select>
           </div>
-          {['label', 'provider', 'accountName', 'accountNumber', 'instructions'].map((key) => (
+          {[
+            ['label', 'Label / display name'],
+            ['provider', 'Provider'],
+            ['accountName', 'Account name'],
+            ['accountNumber', 'Number / account'],
+            ['instructions', 'Instructions for members'],
+          ].map(([key, label]) => (
             <div key={key}>
-              <label className="block text-sm font-medium mb-1 capitalize">
-                {key.replace(/([A-Z])/g, ' $1')}
-              </label>
-              <input
-                className="pmss-input"
-                value={methodForm[key]}
-                onChange={(e) => setMethodForm((f) => ({ ...f, [key]: e.target.value }))}
-              />
+              <label className="block text-sm font-medium mb-1">{label}</label>
+              {key === 'instructions' ? (
+                <textarea
+                  className="pmss-input h-20 py-2"
+                  value={methodForm[key]}
+                  onChange={(e) => setMethodForm((f) => ({ ...f, [key]: e.target.value }))}
+                />
+              ) : (
+                <input
+                  className="pmss-input"
+                  value={methodForm[key]}
+                  onChange={(e) => setMethodForm((f) => ({ ...f, [key]: e.target.value }))}
+                />
+              )}
             </div>
           ))}
+          {methodForm.id && (
+            <label className="flex items-center gap-2 text-sm text-neutral-700">
+              <input
+                type="checkbox"
+                checked={methodForm.active}
+                onChange={(e) => setMethodForm((f) => ({ ...f, active: e.target.checked }))}
+                className="rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+              />
+              Active (visible to members)
+            </label>
+          )}
         </div>
       </Modal>
 
@@ -1028,6 +1322,14 @@ export default function FinancePage() {
         }
       >
         <div className="space-y-3">
+          {verifyModal && (verifyModal.hasEvidenceFile || verifyModal.evidenceNote) && (
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50/80 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">
+                Submitted evidence
+              </p>
+              <EvidenceCell row={verifyModal} onOpen={openSubmissionEvidence} onError={showToast} />
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium mb-1">Decision</label>
             <select

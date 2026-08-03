@@ -1,4 +1,14 @@
 import { apiFetch } from './client'
+import { API_BASE, AUTH_TOKEN_KEY } from './config'
+
+function authHeaders() {
+  try {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  } catch {
+    return {}
+  }
+}
 
 export function fetchFinanceSummary() {
   return apiFetch('/finance/summary')
@@ -47,6 +57,21 @@ export function fetchSubmissions(params = {}) {
 
 export function createSubmission(body) {
   return apiFetch('/finance/submissions', { method: 'POST', body })
+}
+
+/** Open attached evidence (image/PDF/doc) in a new tab. */
+export async function openSubmissionEvidence(submissionId) {
+  const res = await fetch(`${API_BASE}/finance/submissions/${submissionId}/evidence`, {
+    headers: authHeaders(),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error ?? 'Could not open evidence')
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  window.open(url, '_blank', 'noopener,noreferrer')
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 export function verifySubmission(id, body) {
