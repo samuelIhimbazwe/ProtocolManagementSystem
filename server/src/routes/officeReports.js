@@ -68,8 +68,8 @@ const REPORT_SELECT = `
   LEFT JOIN users ru ON ru.id = r.recipient_user_id
 `
 
-function actorProfile(userId) {
-  return db
+async function actorProfile(userId) {
+  return await db
     .prepare(
       `SELECT u.id, u.display_name, u.email, u.member_id, u.app_role, m.name AS member_name
        FROM users u
@@ -79,12 +79,12 @@ function actorProfile(userId) {
     .get(userId)
 }
 
-function schedulePayload() {
-  return getPublishedPayload() ?? getDraftPayload()
+async function schedulePayload() {
+  return (await getPublishedPayload()) ?? (await getDraftPayload())
 }
 
-function officeAccessForUser(user) {
-  const payload = schedulePayload()
+async function officeAccessForUser(user) {
+  const payload = await schedulePayload()
   const memberName = user.member_name || user.display_name
   if (user.app_role === 'member') {
     return resolveOfficeAccess({
@@ -102,10 +102,10 @@ function officeAccessForUser(user) {
   })
 }
 
-function jurisdictionForRequest(req) {
-  const user = actorProfile(req.auth.sub)
+async function jurisdictionForRequest(req) {
+  const user = await actorProfile(req.auth.sub)
   if (!user) return null
-  const access = officeAccessForUser(user)
+  const access = await officeAccessForUser(user)
   if (req.auth.role === 'member') {
     return resolveJurisdiction('member', access.kind)
   }
@@ -141,8 +141,8 @@ function authorRoleForCreate(req, jurisdiction) {
   return req.auth.role
 }
 
-function attendanceBreakdown() {
-  const rows = db
+async function attendanceBreakdown() {
+  const rows = await db
     .prepare(
       `SELECT r.status, COUNT(*) AS c FROM attendance_records r
        JOIN attendance_sessions s ON s.id = r.session_id
@@ -291,33 +291,43 @@ function scheduleAnalyticsLight(payload) {
   }
 }
 
-function financeOverviewSnapshot() {
-  const pending = db
-    .prepare(`SELECT COUNT(*) AS c FROM contribution_submissions WHERE status = 'pending'`)
-    .get().c
-  const collected = db
-    .prepare(
-      `SELECT COALESCE(SUM(
+async function financeOverviewSnapshot() {
+  const pending = (
+    await db
+      .prepare(`SELECT COUNT(*) AS c FROM contribution_submissions WHERE status = 'pending'`)
+      .get()
+  ).c
+  const collected = (
+    await db
+      .prepare(
+        `SELECT COALESCE(SUM(
          CASE
            WHEN status = 'confirmed' THEN COALESCE(confirmed_amount, claimed_amount)
            WHEN status = 'partial' THEN COALESCE(confirmed_amount, 0)
            ELSE 0
          END
        ), 0) AS total FROM contribution_submissions`,
-    )
-    .get().total
-  const outstanding = db
-    .prepare(
-      `SELECT COALESCE(SUM(outstanding_amount), 0) AS total
+      )
+      .get()
+  ).total
+  const outstanding = (
+    await db
+      .prepare(
+        `SELECT COALESCE(SUM(outstanding_amount), 0) AS total
        FROM contribution_followups WHERE status IN ('open', 'in_progress')`,
-    )
-    .get().total
-  const activeTypes = db
-    .prepare(`SELECT COUNT(*) AS c FROM contribution_types WHERE status = 'Active'`)
-    .get().c
-  const goals = db
-    .prepare(`SELECT COALESCE(SUM(ministry_goal), 0) AS total FROM contribution_types WHERE status = 'Active'`)
-    .get().total
+      )
+      .get()
+  ).total
+  const activeTypes = (
+    await db
+      .prepare(`SELECT COUNT(*) AS c FROM contribution_types WHERE status = 'Active'`)
+      .get()
+  ).c
+  const goals = (
+    await db
+      .prepare(`SELECT COALESCE(SUM(ministry_goal), 0) AS total FROM contribution_types WHERE status = 'Active'`)
+      .get()
+  ).total
   return {
     collected,
     pending,
@@ -327,8 +337,8 @@ function financeOverviewSnapshot() {
   }
 }
 
-function collectionSnapshot() {
-  return db
+async function collectionSnapshot() {
+  return (await db
     .prepare(
       `SELECT t.id, t.name, t.ministry_goal,
         COALESCE(SUM(CASE WHEN s.status = 'confirmed' THEN COALESCE(s.confirmed_amount, s.claimed_amount)
@@ -339,8 +349,7 @@ function collectionSnapshot() {
        GROUP BY t.id
        ORDER BY t.name`,
     )
-    .all()
-    .map((r) => ({
+    .all()).map((r) => ({
       id: r.id,
       name: r.name,
       ministryGoal: r.ministry_goal,
@@ -350,8 +359,8 @@ function collectionSnapshot() {
     }))
 }
 
-function outstandingSnapshot() {
-  return db
+async function outstandingSnapshot() {
+  return await db
     .prepare(
       `SELECT f.outstanding_amount, f.status, m.name AS member_name, t.name AS contribution_name
        FROM contribution_followups f
@@ -365,8 +374,8 @@ function outstandingSnapshot() {
     .all()
 }
 
-function exceptionsSnapshot() {
-  const partials = db
+async function exceptionsSnapshot() {
+  const partials = await db
     .prepare(
       `SELECT s.id, s.claimed_amount, s.confirmed_amount, m.name AS member_name, t.name AS contribution_name,
         'partial' AS status
@@ -378,7 +387,7 @@ function exceptionsSnapshot() {
        LIMIT 25`,
     )
     .all()
-  const declined = db
+  const declined = await db
     .prepare(
       `SELECT s.id, s.claimed_amount, m.name AS member_name, t.name AS contribution_name,
         'declined' AS status
@@ -393,8 +402,8 @@ function exceptionsSnapshot() {
   return { partials, declined }
 }
 
-function memberAttendanceSnapshot() {
-  return db
+async function memberAttendanceSnapshot() {
+  return (await db
     .prepare(
       `SELECT m.name AS member,
         COUNT(*) AS marks,
@@ -410,8 +419,7 @@ function memberAttendanceSnapshot() {
        ORDER BY m.name
        LIMIT 120`,
     )
-    .all()
-    .map((r) => {
+    .all()).map((r) => {
       const weighted = r.present + r.half * 0.5 + r.quarter * 0.25
       const rate = r.marks > 0 ? `${Math.round((weighted / r.marks) * 100)}%` : '—'
       return {
@@ -426,8 +434,8 @@ function memberAttendanceSnapshot() {
     })
 }
 
-function publicationSnapshot() {
-  const pub = db
+async function publicationSnapshot() {
+  const pub = await db
     .prepare(
       `SELECT v.id, v.status, v.version_label, v.published_at, v.month_key, u.display_name AS published_by
        FROM schedule_versions v
@@ -437,7 +445,7 @@ function publicationSnapshot() {
        LIMIT 1`,
     )
     .get()
-  const draft = db
+  const draft = await db
     .prepare(
       `SELECT id, status, version_label, created_at, month_key FROM schedule_versions WHERE status = 'draft' LIMIT 1`,
     )
@@ -454,8 +462,8 @@ function publicationSnapshot() {
   }
 }
 
-function historySnapshot() {
-  return db
+async function historySnapshot() {
+  return (await db
     .prepare(
       `SELECT v.id, v.version_label, v.status, v.month_key, v.published_at, v.created_at,
         u.display_name AS published_by
@@ -464,8 +472,7 @@ function historySnapshot() {
        ORDER BY COALESCE(v.published_at, v.created_at) DESC
        LIMIT 15`,
     )
-    .all()
-    .map((r) => ({
+    .all()).map((r) => ({
       id: r.id,
       label: r.version_label,
       status: r.status,
@@ -476,8 +483,8 @@ function historySnapshot() {
     }))
 }
 
-function membersByChoirSnapshot() {
-  return db
+async function membersByChoirSnapshot() {
+  return await db
     .prepare(
       `SELECT COALESCE(NULLIF(choir, ''), 'Unassigned') AS choir, COUNT(*) AS members
        FROM members
@@ -488,8 +495,8 @@ function membersByChoirSnapshot() {
     .all()
 }
 
-function usersOverviewSnapshot() {
-  const rows = db.prepare(`SELECT status, COUNT(*) AS c FROM users GROUP BY status`).all()
+async function usersOverviewSnapshot() {
+  const rows = await db.prepare(`SELECT status, COUNT(*) AS c FROM users GROUP BY status`).all()
   const by = Object.fromEntries(rows.map((r) => [r.status, r.c]))
   return {
     active: by.Active ?? 0,
@@ -499,8 +506,8 @@ function usersOverviewSnapshot() {
   }
 }
 
-function publicGoalsSnapshot() {
-  return db
+async function publicGoalsSnapshot() {
+  return (await db
     .prepare(
       `SELECT t.id, t.name, t.ministry_goal, t.visibility,
         COALESCE(SUM(CASE WHEN s.status = 'confirmed' THEN COALESCE(s.confirmed_amount, s.claimed_amount)
@@ -511,8 +518,7 @@ function publicGoalsSnapshot() {
        GROUP BY t.id
        ORDER BY t.name`,
     )
-    .all()
-    .map((r) => ({
+    .all()).map((r) => ({
       name: r.name,
       goal: r.ministry_goal,
       collected: r.collected,
@@ -521,8 +527,8 @@ function publicGoalsSnapshot() {
     }))
 }
 
-function typesCatalogSnapshot() {
-  return db
+async function typesCatalogSnapshot() {
+  return await db
     .prepare(
       `SELECT name, ministry_goal, frequency, status, visibility
        FROM contribution_types
@@ -531,8 +537,8 @@ function typesCatalogSnapshot() {
     .all()
 }
 
-function methodsCatalogSnapshot() {
-  return db
+async function methodsCatalogSnapshot() {
+  return await db
     .prepare(
       `SELECT label AS name, kind AS channel,
         CASE WHEN active = 1 THEN 'Active' ELSE 'Inactive' END AS status
@@ -542,8 +548,8 @@ function methodsCatalogSnapshot() {
     .all()
 }
 
-function memberFinanceSnapshot() {
-  return db
+async function memberFinanceSnapshot() {
+  return await db
     .prepare(
       `SELECT m.name AS member,
         COALESCE(SUM(s.claimed_amount), 0) AS claimed,
@@ -560,8 +566,8 @@ function memberFinanceSnapshot() {
     .all()
 }
 
-function followupsSnapshot() {
-  return db
+async function followupsSnapshot() {
+  return await db
     .prepare(
       `SELECT f.status, f.outstanding_amount, m.name AS member_name, t.name AS contribution_name
        FROM contribution_followups f
@@ -575,8 +581,8 @@ function followupsSnapshot() {
     .all()
 }
 
-function submissionsByStatus(status, limit = 40) {
-  return db
+async function submissionsByStatus(status, limit = 40) {
+  return await db
     .prepare(
       `SELECT s.id, s.claimed_amount, s.confirmed_amount, s.status, s.submitted_at,
         m.name AS member_name, t.name AS contribution_name
@@ -590,8 +596,8 @@ function submissionsByStatus(status, limit = 40) {
     .all(status, limit)
 }
 
-function activitySnapshot() {
-  return db
+async function activitySnapshot() {
+  return await db
     .prepare(
       `SELECT a.action, a.created_at, u.display_name AS actor
        FROM audit_log a
@@ -602,12 +608,12 @@ function activitySnapshot() {
     .all()
 }
 
-function buildBundleSnapshot(req, includeIds, jurisdiction) {
+async function buildBundleSnapshot(req, includeIds, jurisdiction) {
   const want = new Set(includeIds)
   const snapshot = {}
-  const user = actorProfile(req.auth.sub)
-  const access = officeAccessForUser(user)
-  const payload = schedulePayload()
+  const user = await actorProfile(req.auth.sub)
+  const access = await officeAccessForUser(user)
+  const payload = await schedulePayload()
 
   if (want.has('dutyMeta')) {
     snapshot.dutyMeta = {
@@ -630,29 +636,31 @@ function buildBundleSnapshot(req, includeIds, jurisdiction) {
   }
 
   const analytics = scheduleAnalyticsLight(payload)
-  const monthly = attendanceBreakdown()
+  const monthly = await attendanceBreakdown()
 
   if (want.has('overview')) {
     snapshot.overview = {
       attendanceRate: monthly.rate,
       attendanceMarks: monthly.total,
-      activeMembers: db.prepare(`SELECT COUNT(*) AS c FROM members WHERE status = 'Active'`).get().c,
-      protocolMembers: db
-        .prepare(`SELECT COUNT(*) AS c FROM members WHERE role = 'Member' AND status = 'Active'`)
-        .get().c,
+      activeMembers: (await db.prepare(`SELECT COUNT(*) AS c FROM members WHERE status = 'Active'`).get()).c,
+      protocolMembers: (
+        await db
+          .prepare(`SELECT COUNT(*) AS c FROM members WHERE role = 'Member' AND status = 'Active'`)
+          .get()
+      ).c,
       servicesScheduled: analytics.serviceCount,
       teamsBuilt: analytics.teamFill.length,
       monthLabel: analytics.monthLabel,
     }
   }
   if (want.has('publication')) {
-    snapshot.publication = publicationSnapshot()
+    snapshot.publication = await publicationSnapshot()
   }
   if (want.has('attendance')) {
     snapshot.attendance = { monthly }
   }
   if (want.has('sessions')) {
-    snapshot.sessions = db
+    snapshot.sessions = (await db
       .prepare(
         `SELECT s.id, s.service_name, s.service_date, s.status, s.submitted_at,
           (SELECT COUNT(*) FROM attendance_records r WHERE r.session_id = s.id) AS recorded,
@@ -661,7 +669,7 @@ function buildBundleSnapshot(req, includeIds, jurisdiction) {
          ORDER BY s.service_date DESC
          LIMIT 10`,
       )
-      .all()
+      .all())
       .map((s) => ({
         id: s.id,
         service: s.service_name,
@@ -675,7 +683,7 @@ function buildBundleSnapshot(req, includeIds, jurisdiction) {
       }))
   }
   if (want.has('memberAttendance')) {
-    snapshot.memberAttendance = memberAttendanceSnapshot()
+    snapshot.memberAttendance = await memberAttendanceSnapshot()
   }
   if (want.has('services')) {
     snapshot.services = analytics.services
@@ -705,86 +713,90 @@ function buildBundleSnapshot(req, includeIds, jurisdiction) {
     snapshot.validation = analytics.validation
   }
   if (want.has('history')) {
-    snapshot.history = historySnapshot()
+    snapshot.history = await historySnapshot()
   }
   if (want.has('membersOverview')) {
     snapshot.membersOverview = {
-      total: db.prepare(`SELECT COUNT(*) AS c FROM members`).get().c,
-      active: db.prepare(`SELECT COUNT(*) AS c FROM members WHERE status = 'Active'`).get().c,
-      protocol: db
-        .prepare(`SELECT COUNT(*) AS c FROM members WHERE role = 'Member' AND status = 'Active'`)
-        .get().c,
-      leadership: db
-        .prepare(`SELECT COUNT(*) AS c FROM members WHERE role != 'Member' AND status = 'Active'`)
-        .get().c,
+      total: (await db.prepare(`SELECT COUNT(*) AS c FROM members`).get()).c,
+      active: (await db.prepare(`SELECT COUNT(*) AS c FROM members WHERE status = 'Active'`).get()).c,
+      protocol: (
+        await db
+          .prepare(`SELECT COUNT(*) AS c FROM members WHERE role = 'Member' AND status = 'Active'`)
+          .get()
+      ).c,
+      leadership: (
+        await db
+          .prepare(`SELECT COUNT(*) AS c FROM members WHERE role != 'Member' AND status = 'Active'`)
+          .get()
+      ).c,
     }
   }
   if (want.has('membersByChoir')) {
-    snapshot.membersByChoir = membersByChoirSnapshot()
+    snapshot.membersByChoir = await membersByChoirSnapshot()
   }
   if (want.has('usersOverview')) {
-    snapshot.usersOverview = usersOverviewSnapshot()
+    snapshot.usersOverview = await usersOverviewSnapshot()
   }
   if (want.has('financeOverview')) {
-    snapshot.financeOverview = financeOverviewSnapshot()
+    snapshot.financeOverview = await financeOverviewSnapshot()
   }
   if (want.has('publicGoals')) {
-    snapshot.publicGoals = publicGoalsSnapshot()
+    snapshot.publicGoals = await publicGoalsSnapshot()
   }
   if (want.has('collection')) {
-    snapshot.collection = collectionSnapshot()
+    snapshot.collection = await collectionSnapshot()
   }
   if (want.has('typesCatalog')) {
-    snapshot.typesCatalog = typesCatalogSnapshot()
+    snapshot.typesCatalog = await typesCatalogSnapshot()
   }
   if (want.has('methodsCatalog')) {
-    snapshot.methodsCatalog = methodsCatalogSnapshot()
+    snapshot.methodsCatalog = await methodsCatalogSnapshot()
   }
   if (want.has('memberFinance')) {
-    snapshot.memberFinance = memberFinanceSnapshot()
+    snapshot.memberFinance = await memberFinanceSnapshot()
   }
   if (want.has('outstanding')) {
-    snapshot.outstanding = outstandingSnapshot()
+    snapshot.outstanding = await outstandingSnapshot()
   }
   if (want.has('followups')) {
-    snapshot.followups = followupsSnapshot()
+    snapshot.followups = await followupsSnapshot()
   }
   if (want.has('pending')) {
-    snapshot.pending = submissionsByStatus('pending')
+    snapshot.pending = await submissionsByStatus('pending')
   }
   if (want.has('confirmed')) {
-    snapshot.confirmed = submissionsByStatus('confirmed')
+    snapshot.confirmed = await submissionsByStatus('confirmed')
   }
   if (want.has('exceptions')) {
-    snapshot.exceptions = exceptionsSnapshot()
+    snapshot.exceptions = await exceptionsSnapshot()
   }
   if (want.has('activity')) {
-    snapshot.activity = activitySnapshot()
+    snapshot.activity = await activitySnapshot()
   }
 
   return snapshot
 }
 
-router.get('/catalog', authMiddleware, (req, res) => {
-  const jurisdiction = jurisdictionForRequest(req)
+router.get('/catalog', authMiddleware, async (req, res) => {
+  const jurisdiction = await jurisdictionForRequest(req)
   if (!jurisdiction) {
     return res.status(403).json({ error: 'No office report jurisdiction for this account' })
   }
 
-  const user = actorProfile(req.auth.sub)
+  const user = await actorProfile(req.auth.sub)
   const blocks = blocksForJurisdiction(jurisdiction)
   const roles = recipientRolesFor(jurisdiction)
   const placeholders = roles.map(() => '?').join(', ')
   const recipients =
     roles.length === 0
       ? []
-      : db
+      : (await db
           .prepare(
             `SELECT id, display_name, app_role FROM users
              WHERE status = 'Active' AND app_role IN (${placeholders})
              ORDER BY display_name`,
           )
-          .all(...roles)
+          .all(...roles))
           .map((u) => ({
             id: u.id,
             displayName: u.display_name,
@@ -803,8 +815,8 @@ router.get('/catalog', authMiddleware, (req, res) => {
   })
 })
 
-router.get('/bundle', authMiddleware, (req, res) => {
-  const jurisdiction = jurisdictionForRequest(req)
+router.get('/bundle', authMiddleware, async (req, res) => {
+  const jurisdiction = await jurisdictionForRequest(req)
   if (!jurisdiction) {
     return res.status(403).json({ error: 'No office report jurisdiction for this account' })
   }
@@ -824,7 +836,7 @@ router.get('/bundle', authMiddleware, (req, res) => {
     }
   }
 
-  const snapshot = buildBundleSnapshot(req, includeIds, jurisdiction)
+  const snapshot = await buildBundleSnapshot(req, includeIds, jurisdiction)
   return res.json({
     jurisdiction,
     include: includeIds,
@@ -833,7 +845,7 @@ router.get('/bundle', authMiddleware, (req, res) => {
   })
 })
 
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   const { mine, inbox } = req.query
   let sql = `${REPORT_SELECT} WHERE 1=1`
   const params = []
@@ -857,19 +869,19 @@ router.get('/', authMiddleware, (req, res) => {
   }
 
   sql += ` ORDER BY r.updated_at DESC LIMIT 50`
-  const rows = db.prepare(sql).all(...params)
+  const rows = await db.prepare(sql).all(...params)
   return res.json({ reports: rows.map(mapReport) })
 })
 
-router.get('/:id', authMiddleware, (req, res) => {
-  const row = db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(req.params.id)
+router.get('/:id', authMiddleware, async (req, res) => {
+  const row = await db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(req.params.id)
   if (!row) return res.status(404).json({ error: 'Not found' })
   if (!canViewReport(req, row)) return res.status(403).json({ error: 'Forbidden' })
   return res.json({ report: mapReport(row) })
 })
 
-router.post('/', authMiddleware, (req, res) => {
-  const jurisdiction = jurisdictionForRequest(req)
+router.post('/', authMiddleware, async (req, res) => {
+  const jurisdiction = await jurisdictionForRequest(req)
   if (!jurisdiction) {
     return res.status(403).json({ error: 'No office report jurisdiction for this account' })
   }
@@ -891,10 +903,10 @@ router.post('/', authMiddleware, (req, res) => {
   }
 
   const snapshot = b.snapshot != null ? b.snapshot : null
-  const user = actorProfile(req.auth.sub)
+  const user = await actorProfile(req.auth.sub)
   const id = uuid()
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO office_reports (
       id, author_user_id, author_name, author_role, jurisdiction,
       title, subtitle, include_json, narrative_json, snapshot_json,
@@ -913,13 +925,13 @@ router.post('/', authMiddleware, (req, res) => {
     snapshot != null ? JSON.stringify(snapshot) : null,
   )
 
-  audit('office_report.create', req.auth.sub, { id, jurisdiction })
-  const row = db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(id)
+  await audit('office_report.create', req.auth.sub, { id, jurisdiction })
+  const row = await db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(id)
   return res.status(201).json({ report: mapReport(row), created: true })
 })
 
-router.put('/:id', authMiddleware, (req, res) => {
-  const row = db.prepare(`SELECT * FROM office_reports WHERE id = ?`).get(req.params.id)
+router.put('/:id', authMiddleware, async (req, res) => {
+  const row = await db.prepare(`SELECT * FROM office_reports WHERE id = ?`).get(req.params.id)
   if (!row) return res.status(404).json({ error: 'Not found' })
   if (row.author_user_id !== req.auth.sub) return res.status(403).json({ error: 'Forbidden' })
   if (row.status !== 'draft') {
@@ -958,7 +970,7 @@ router.put('/:id', authMiddleware, (req, res) => {
     snapshotJson = b.snapshot != null ? JSON.stringify(b.snapshot) : null
   }
 
-  db.prepare(
+  await db.prepare(
     `UPDATE office_reports SET
       title = ?,
       subtitle = ?,
@@ -976,16 +988,16 @@ router.put('/:id', authMiddleware, (req, res) => {
     row.id,
   )
 
-  const updated = db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(row.id)
+  const updated = await db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(row.id)
   return res.json({ report: mapReport(updated) })
 })
 
-router.post('/:id/submit', authMiddleware, (req, res) => {
-  const row = db.prepare(`SELECT * FROM office_reports WHERE id = ?`).get(req.params.id)
+router.post('/:id/submit', authMiddleware, async (req, res) => {
+  const row = await db.prepare(`SELECT * FROM office_reports WHERE id = ?`).get(req.params.id)
   if (!row) return res.status(404).json({ error: 'Not found' })
   if (row.author_user_id !== req.auth.sub) return res.status(403).json({ error: 'Forbidden' })
   if (row.status === 'submitted') {
-    const existing = db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(row.id)
+    const existing = await db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(row.id)
     return res.json({ report: mapReport(existing) })
   }
 
@@ -1001,7 +1013,7 @@ router.post('/:id/submit', authMiddleware, (req, res) => {
     if (!recipientUserId) {
       return res.status(400).json({ error: 'recipientUserId required' })
     }
-    const recipient = db.prepare(`SELECT id, app_role, status FROM users WHERE id = ?`).get(recipientUserId)
+    const recipient = await db.prepare(`SELECT id, app_role, status FROM users WHERE id = ?`).get(recipientUserId)
     if (!recipient || recipient.status !== 'Active') {
       return res.status(400).json({ error: 'Invalid recipient' })
     }
@@ -1010,7 +1022,7 @@ router.post('/:id/submit', authMiddleware, (req, res) => {
     }
   }
 
-  db.prepare(
+  await db.prepare(
     `UPDATE office_reports SET
       recipient_user_id = ?,
       status = 'submitted',
@@ -1019,12 +1031,12 @@ router.post('/:id/submit', authMiddleware, (req, res) => {
      WHERE id = ?`,
   ).run(recipientUserId, row.id)
 
-  audit('office_report.submit', req.auth.sub, {
+  await audit('office_report.submit', req.auth.sub, {
     id: row.id,
     jurisdiction,
     recipientUserId,
   })
-  const updated = db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(row.id)
+  const updated = await db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(row.id)
   return res.json({ report: mapReport(updated) })
 })
 

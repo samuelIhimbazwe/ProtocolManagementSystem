@@ -28,8 +28,8 @@ function parseChoirs(choirs) {
     .filter(Boolean)
 }
 
-function attendanceBreakdown(extraWhere = '', params = []) {
-  const rows = db
+async function attendanceBreakdown(extraWhere = '', params = []) {
+  const rows = await db
     .prepare(
       `SELECT r.status, COUNT(*) AS c FROM attendance_records r
        JOIN attendance_sessions s ON s.id = r.session_id
@@ -197,23 +197,25 @@ function buildScheduleAnalytics(payload) {
   }
 }
 
-router.get('/attendance', authMiddleware, (req, res) => {
+router.get('/attendance', authMiddleware, async (req, res) => {
   if (!requireReports(req, res)) return
 
-  const monthly = attendanceBreakdown()
-  const sessionsSubmitted = db
-    .prepare(`SELECT COUNT(*) AS c FROM attendance_sessions WHERE status = 'submitted'`)
-    .get().c
+  const monthly = await attendanceBreakdown()
+  const sessionsSubmitted = (
+    await db
+      .prepare(`SELECT COUNT(*) AS c FROM attendance_sessions WHERE status = 'submitted'`)
+      .get()
+  ).c
 
   return res.json({ monthly, sessionsSubmitted })
 })
 
-router.get('/leadership', authMiddleware, (req, res) => {
+router.get('/leadership', authMiddleware, async (req, res) => {
   if (!requireReports(req, res)) return
 
-  const payload = getPublishedPayload() ?? getDraftPayload()
+  const payload = (await getPublishedPayload()) ?? (await getDraftPayload())
   const analytics = buildScheduleAnalytics(payload)
-  const published = db
+  const published = await db
     .prepare(
       `SELECT version_label, month_key, published_at, published_by_user_id
        FROM schedule_versions WHERE status = 'published' ORDER BY published_at DESC LIMIT 1`,
@@ -233,7 +235,7 @@ router.get('/leadership', authMiddleware, (req, res) => {
 })
 
 /** Full ministry report pack for the Reports page. */
-router.get('/summary', authMiddleware, (req, res) => {
+router.get('/summary', authMiddleware, async (req, res) => {
   if (!requireReports(req, res)) return
 
   const serviceFilter = String(req.query.service ?? '').trim()
@@ -255,9 +257,9 @@ router.get('/summary', authMiddleware, (req, res) => {
     attParams.push(end)
   }
 
-  const monthly = attendanceBreakdown(attWhere, attParams)
+  const monthly = await attendanceBreakdown(attWhere, attParams)
 
-  const sessions = db
+  const sessions = (await db
     .prepare(
       `SELECT s.id, s.service_name, s.service_date, s.status, s.submitted_at,
         (SELECT COUNT(*) FROM attendance_records r WHERE r.session_id = s.id) AS recorded,
@@ -277,7 +279,7 @@ router.get('/summary', authMiddleware, (req, res) => {
         ...(start ? [start] : []),
         ...(end ? [end] : []),
       ],
-    )
+    ))
     .map((s) => {
       const recorded = s.recorded ?? 0
       const presentN = s.present_n ?? 0
@@ -311,7 +313,7 @@ router.get('/summary', authMiddleware, (req, res) => {
     memberAttParams.push(end)
   }
 
-  const memberAttendance = db
+  const memberAttendance = (await db
     .prepare(
       `SELECT m.id, m.name, m.choir, m.attendance_rate AS stored_rate,
         COUNT(r.id) AS marks,
@@ -329,7 +331,7 @@ router.get('/summary', authMiddleware, (req, res) => {
        ORDER BY absent_n DESC, present_n ASC
        LIMIT 100`,
     )
-    .all(...memberAttParams)
+    .all(...memberAttParams))
     .map((m) => {
       const marks = m.marks ?? 0
       const weighted =
@@ -349,18 +351,24 @@ router.get('/summary', authMiddleware, (req, res) => {
     })
 
   const members = {
-    total: db.prepare(`SELECT COUNT(*) AS c FROM members`).get().c,
-    active: db.prepare(`SELECT COUNT(*) AS c FROM members WHERE status = 'Active'`).get().c,
-    protocol: db
-      .prepare(`SELECT COUNT(*) AS c FROM members WHERE role = 'Member' AND status = 'Active'`)
-      .get().c,
-    leadership: db
-      .prepare(`SELECT COUNT(*) AS c FROM members WHERE role != 'Member' AND status = 'Active'`)
-      .get().c,
-    withChoir: db
-      .prepare(`SELECT COUNT(*) AS c FROM members WHERE choir IS NOT NULL AND TRIM(choir) != ''`)
-      .get().c,
-    byChoir: db
+    total: (await db.prepare(`SELECT COUNT(*) AS c FROM members`).get()).c,
+    active: (await db.prepare(`SELECT COUNT(*) AS c FROM members WHERE status = 'Active'`).get()).c,
+    protocol: (
+      await db
+        .prepare(`SELECT COUNT(*) AS c FROM members WHERE role = 'Member' AND status = 'Active'`)
+        .get()
+    ).c,
+    leadership: (
+      await db
+        .prepare(`SELECT COUNT(*) AS c FROM members WHERE role != 'Member' AND status = 'Active'`)
+        .get()
+    ).c,
+    withChoir: (
+      await db
+        .prepare(`SELECT COUNT(*) AS c FROM members WHERE choir IS NOT NULL AND TRIM(choir) != ''`)
+        .get()
+    ).c,
+    byChoir: await db
       .prepare(
         `SELECT COALESCE(NULLIF(TRIM(choir), ''), 'Unassigned') AS choir, COUNT(*) AS count
          FROM members WHERE role = 'Member' AND status = 'Active'
@@ -370,22 +378,26 @@ router.get('/summary', authMiddleware, (req, res) => {
   }
 
   const users = {
-    total: db.prepare(`SELECT COUNT(*) AS c FROM users`).get().c,
-    active: db.prepare(`SELECT COUNT(*) AS c FROM users WHERE status = 'Active'`).get().c,
-    invited: db.prepare(`SELECT COUNT(*) AS c FROM users WHERE status = 'Invited'`).get().c,
-    deactivated: db
-      .prepare(`SELECT COUNT(*) AS c FROM users WHERE status = 'Deactivated'`)
-      .get().c,
+    total: (await db.prepare(`SELECT COUNT(*) AS c FROM users`).get()).c,
+    active: (await db.prepare(`SELECT COUNT(*) AS c FROM users WHERE status = 'Active'`).get()).c,
+    invited: (await db.prepare(`SELECT COUNT(*) AS c FROM users WHERE status = 'Invited'`).get()).c,
+    deactivated: (
+      await db
+        .prepare(`SELECT COUNT(*) AS c FROM users WHERE status = 'Deactivated'`)
+        .get()
+    ).c,
   }
 
-  const published = db
+  const published = await db
     .prepare(
       `SELECT version_label, month_key, published_at, published_by_user_id, payload_json
        FROM schedule_versions WHERE status = 'published' ORDER BY published_at DESC LIMIT 1`,
     )
     .get()
-  const draft = db.prepare(`SELECT version_label, month_key FROM schedule_versions WHERE status = 'draft' LIMIT 1`).get()
-  const versionHistory = db
+  const draft = await db
+    .prepare(`SELECT version_label, month_key FROM schedule_versions WHERE status = 'draft' LIMIT 1`)
+    .get()
+  const versionHistory = await db
     .prepare(
       `SELECT version_label, status, month_key, published_at, created_at
        FROM schedule_versions ORDER BY created_at DESC LIMIT 12`,
@@ -394,9 +406,9 @@ router.get('/summary', authMiddleware, (req, res) => {
 
   let payload = null
   try {
-    payload = published ? JSON.parse(published.payload_json) : getDraftPayload()
+    payload = published ? JSON.parse(published.payload_json) : await getDraftPayload()
   } catch {
-    payload = getDraftPayload()
+    payload = await getDraftPayload()
   }
 
   let schedule = buildScheduleAnalytics(payload)
@@ -419,16 +431,16 @@ router.get('/summary', authMiddleware, (req, res) => {
   }
 
   const publisher = published?.published_by_user_id
-    ? db.prepare(`SELECT display_name FROM users WHERE id = ?`).get(published.published_by_user_id)
+    ? await db.prepare(`SELECT display_name FROM users WHERE id = ?`).get(published.published_by_user_id)
     : null
 
-  const activity = db
+  const activity = (await db
     .prepare(
       `SELECT action, meta_json, created_at, actor_user_id FROM audit_log
        WHERE action NOT LIKE 'auth.%'
        ORDER BY created_at DESC LIMIT 50`,
     )
-    .all()
+    .all())
     .map((r) => {
       let meta = {}
       try {
@@ -456,9 +468,11 @@ router.get('/summary', authMiddleware, (req, res) => {
     overview: {
       attendanceRate: monthly.rate,
       attendanceMarks: monthly.total,
-      sessionsSubmitted: db
-        .prepare(`SELECT COUNT(*) AS c FROM attendance_sessions WHERE status = 'submitted'`)
-        .get().c,
+      sessionsSubmitted: (
+        await db
+          .prepare(`SELECT COUNT(*) AS c FROM attendance_sessions WHERE status = 'submitted'`)
+          .get()
+      ).c,
       activeMembers: members.active,
       protocolMembers: members.protocol,
       servicesScheduled: schedule.serviceCount,
