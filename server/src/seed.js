@@ -20,7 +20,7 @@ function usernameFromName(name) {
   return parts[0]?.replace(/[^a-z]/g, '') ?? 'user'
 }
 
-export function buildDefaultSchedulePayload(members) {
+export async function buildDefaultSchedulePayload(members) {
   const pool = protocolNamePool(members)
   const teamAssignments = buildMonthlyServiceTeams(pool, PILOT_SERVICES, { shuffle: false })
   const leadershipReview = teamAssignments
@@ -42,14 +42,14 @@ export function buildDefaultSchedulePayload(members) {
     leadershipReview,
   }
 
-  const rules = loadRulesFromDb()
+  const rules = await loadRulesFromDb()
   const { rows, summary } = validateSchedulePayload(base, rules)
   return { ...base, validationRows: rows, validationSummary: summary }
 }
 
-function seedMembers(force) {
-  if (force) db.exec(`DELETE FROM members`)
-  const count = db.prepare(`SELECT COUNT(*) AS c FROM members`).get().c
+async function seedMembers(force) {
+  if (force) await db.exec(`DELETE FROM members`)
+  const count = (await db.prepare(`SELECT COUNT(*) AS c FROM members`).get()).c
   if (count > 0 && !force) return
 
   const insert = db.prepare(`
@@ -57,25 +57,25 @@ function seedMembers(force) {
     VALUES (@id, @name, @phone, @role, @status, @attendance_rate, @choir)
   `)
   for (const m of buildMemberRows()) {
-    insert.run(m)
+    await insert.run(m)
   }
 }
 
 export async function seedDatabase({ force = false } = {}) {
-  initSchema()
-  ensureDefaultRules()
+  await initSchema()
+  await ensureDefaultRules()
 
-  seedMembers(force)
+  await seedMembers(force)
 
-  const userCount = db.prepare(`SELECT COUNT(*) AS c FROM users`).get().c
+  const userCount = (await db.prepare(`SELECT COUNT(*) AS c FROM users`).get()).c
   if (userCount > 0 && !force) {
     console.log('Database already seeded (%d users). Use --force to reseed.', userCount)
-    seedFinanceDemo()
+    await seedFinanceDemo()
     return
   }
 
   if (force) {
-    db.exec(`
+    await db.exec(`
       DELETE FROM contribution_followup_notes;
       DELETE FROM contribution_followups;
       DELETE FROM contribution_submissions;
@@ -89,7 +89,7 @@ export async function seedDatabase({ force = false } = {}) {
       DELETE FROM schedule_versions;
       DELETE FROM users;
     `)
-    seedMembers(true)
+    await seedMembers(true)
   }
 
   const hash = await bcrypt.hash(SEED_PASSWORD, 10)
@@ -107,7 +107,7 @@ export async function seedDatabase({ force = false } = {}) {
       Treasurer: 'treasurer',
       Coordinator: 'coordinator',
     }
-    insertUser.run({
+    await insertUser.run({
       id: uuid(),
       username,
       email: `${username}@church.internal`,
@@ -119,7 +119,7 @@ export async function seedDatabase({ force = false } = {}) {
     })
   }
 
-  insertUser.run({
+  await insertUser.run({
     id: uuid(),
     username: 'j.ndayisaba',
     email: 'j.ndayisaba@church.internal',
@@ -130,10 +130,10 @@ export async function seedDatabase({ force = false } = {}) {
     status: 'Active',
   })
 
-  const marieMember = db
+  const marieMember = await db
     .prepare(`SELECT id FROM members WHERE name = 'Marie Claire Uwamahoro' LIMIT 1`)
     .get()
-  insertUser.run({
+  await insertUser.run({
     id: uuid(),
     username: 'm.uwamahoro',
     email: 'm.uwamahoro@church.internal',
@@ -145,14 +145,14 @@ export async function seedDatabase({ force = false } = {}) {
   })
 
   const members = buildMemberRows()
-  const payload = buildDefaultSchedulePayload(members)
+  const payload = await buildDefaultSchedulePayload(members)
   const draftId = uuid()
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO schedule_versions (id, version_label, status, month_key, payload_json)
     VALUES (?, 'Draft', 'draft', '2026-08', ?)
   `).run(draftId, JSON.stringify(payload))
 
-  const coordinator = db
+  const coordinator = await db
     .prepare(`SELECT id FROM users WHERE username = 'd.mugisha' COLLATE NOCASE LIMIT 1`)
     .get()
   const publishId = uuid()
@@ -161,39 +161,39 @@ export async function seedDatabase({ force = false } = {}) {
     versionLabel: 'V1',
     publishedAt: new Date().toISOString(),
   }
-  db.prepare(
+  await db.prepare(
     `INSERT INTO schedule_versions (id, version_label, status, month_key, payload_json, published_at, published_by_user_id)
      VALUES (?, 'V1', 'published', '2026-08', ?, datetime('now'), ?)`,
   ).run(publishId, JSON.stringify(publishedPayload), coordinator?.id ?? null)
 
-  audit('system.seed', null, {
+  await audit('system.seed', null, {
     users: ADMIN_ROSTER.length + 2,
     members: members.length,
     published: 'V1',
   })
-  audit('schedule.publish', coordinator?.id ?? null, {
+  await audit('schedule.publish', coordinator?.id ?? null, {
     versionLabel: 'V1',
     monthKey: '2026-08',
     monthLabel: 'August 2026',
     summary: 'Schedule V1 published for August 2026',
   })
-  audit('schedule.team_assignments', coordinator?.id ?? null, {
+  await audit('schedule.team_assignments', coordinator?.id ?? null, {
     monthKey: '2026-08',
     monthLabel: 'August 2026',
     teams: payload.teamAssignments?.length ?? 0,
     summary: 'Service teams built for August 2026',
   })
-  audit('schedule.choir_assignments', coordinator?.id ?? null, {
+  await audit('schedule.choir_assignments', coordinator?.id ?? null, {
     monthKey: '2026-08',
     monthLabel: 'August 2026',
     summary: 'Choir schedule generated for August 2026',
   })
-  audit('schedule.leadership_approved', coordinator?.id ?? null, {
+  await audit('schedule.leadership_approved', coordinator?.id ?? null, {
     monthKey: '2026-08',
     monthLabel: 'August 2026',
     summary: 'Leadership assignments approved for August 2026',
   })
-  audit('ministry.announcement', coordinator?.id ?? null, {
+  await audit('ministry.announcement', coordinator?.id ?? null, {
     title: 'Welcome to the protocol month',
     summary: 'August 2026 schedule is live. Check your team and choir assignments.',
   })
@@ -203,45 +203,45 @@ export async function seedDatabase({ force = false } = {}) {
     members.length,
   )
 
-  seedFinanceDemo()
+  await seedFinanceDemo()
 }
 
 /** Idempotent finance pilot data (runs on every boot if empty). */
-export function seedFinanceDemo() {
-  const methodCount = db.prepare(`SELECT COUNT(*) AS c FROM payment_methods`).get().c
+export async function seedFinanceDemo() {
+  const methodCount = (await db.prepare(`SELECT COUNT(*) AS c FROM payment_methods`).get()).c
   if (methodCount > 0) return
 
   const momo = uuid()
   const airtel = uuid()
   const bank = uuid()
   const cash = uuid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO payment_methods (id, kind, label, provider, account_name, account_number, instructions, sort_order)
      VALUES (?, 'mobile_money', 'MTN MoMo', 'MTN', 'Protocol Ministry Treasurer', '078XXXXXXX', 'Use merchant name Protocol Ministry', 1)`,
   ).run(momo)
-  db.prepare(
+  await db.prepare(
     `INSERT INTO payment_methods (id, kind, label, provider, account_name, account_number, instructions, sort_order)
      VALUES (?, 'mobile_money', 'Airtel Money', 'Airtel', 'Protocol Ministry Treasurer', '073XXXXXXX', NULL, 2)`,
   ).run(airtel)
-  db.prepare(
+  await db.prepare(
     `INSERT INTO payment_methods (id, kind, label, provider, account_name, account_number, instructions, sort_order)
      VALUES (?, 'bank', 'Bank of Kigali', 'Bank of Kigali', 'Protocol Ministry', '123456789', 'Account name: Protocol Ministry', 3)`,
   ).run(bank)
-  db.prepare(
+  await db.prepare(
     `INSERT INTO payment_methods (id, kind, label, provider, account_name, account_number, instructions, sort_order)
      VALUES (?, 'cash', 'Cash', NULL, 'Protocol Ministry Treasurer', NULL, 'Hand to Treasurer during office hours', 4)`,
   ).run(cash)
 
   const monthly = uuid()
   const uniform = uuid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO contribution_types
      (id, name, description, category, status, frequency, ministry_goal, member_goal,
       member_goal_mode, visibility, start_date, deadline)
      VALUES (?, 'Monthly Contribution', 'Recurring protocol support', 'Recurring', 'Active', 'monthly',
       500000, 5000, 'uniform', 'public', '2026-08-01', '2026-08-31')`,
   ).run(monthly)
-  db.prepare(
+  await db.prepare(
     `INSERT INTO contribution_types
      (id, name, description, category, status, frequency, ministry_goal, member_goal,
       member_goal_mode, visibility, start_date, deadline)
@@ -249,12 +249,12 @@ export function seedFinanceDemo() {
       200000, 10000, 'uniform', 'private', '2026-08-01', '2026-09-30')`,
   ).run(uniform)
 
-  const members = db
+  const members = await db
     .prepare(`SELECT id FROM members WHERE role = 'Member' AND status = 'Active' LIMIT 5`)
     .all()
   if (members[0]) {
     const s1 = uuid()
-    db.prepare(
+    await db.prepare(
       `INSERT INTO contribution_submissions
        (id, contribution_type_id, member_id, payment_date, claimed_amount, confirmed_amount,
         payment_method_id, evidence_note, status, confirmed_at, verified_by_user_id)
@@ -264,7 +264,7 @@ export function seedFinanceDemo() {
   }
   if (members[1]) {
     const s2 = uuid()
-    db.prepare(
+    await db.prepare(
       `INSERT INTO contribution_submissions
        (id, contribution_type_id, member_id, payment_date, claimed_amount, confirmed_amount,
         payment_method_id, evidence_note, status, confirmed_at, verification_note, verified_by_user_id)
@@ -273,18 +273,18 @@ export function seedFinanceDemo() {
         (SELECT id FROM users WHERE username = 'j.uwimana' COLLATE NOCASE LIMIT 1))`,
     ).run(s2, monthly, members[1].id, momo)
     const fu = uuid()
-    db.prepare(
+    await db.prepare(
       `INSERT INTO contribution_followups (id, submission_id, outstanding_amount, status)
        VALUES (?, ?, 2000, 'open')`,
     ).run(fu, s2)
-    db.prepare(
+    await db.prepare(
       `INSERT INTO contribution_followup_notes (id, followup_id, author_user_id, body)
        VALUES (?, ?, (SELECT id FROM users WHERE username = 'j.uwimana' COLLATE NOCASE LIMIT 1),
         'Received 3,000 RWF. Remaining balance is 2,000 RWF. Please complete payment before deadline.')`,
     ).run(uuid(), fu)
   }
   if (members[2]) {
-    db.prepare(
+    await db.prepare(
       `INSERT INTO contribution_submissions
        (id, contribution_type_id, member_id, payment_date, claimed_amount, payment_method_id,
         evidence_note, status)
@@ -297,8 +297,10 @@ export function seedFinanceDemo() {
 
 if (process.argv[1]?.endsWith('seed.js')) {
   const force = process.argv.includes('--force')
-  seedDatabase({ force }).catch((e) => {
-    console.error(e)
-    process.exit(1)
-  })
+  initSchema()
+    .then(() => seedDatabase({ force }))
+    .catch((e) => {
+      console.error(e)
+      process.exit(1)
+    })
 }
