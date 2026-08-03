@@ -16,6 +16,8 @@ import dashboardRoutes from './routes/dashboard.js'
 import reportsRoutes from './routes/reports.js'
 import notificationsRoutes from './routes/notifications.js'
 import financeRoutes from './routes/finance.js'
+import serviceReportRoutes from './routes/serviceReports.js'
+import officeReportRoutes from './routes/officeReports.js'
 import configRoutes from './routes/config.js'
 import { mountWebApp } from './staticWeb.js'
 
@@ -30,7 +32,7 @@ const app = express()
 const port = Number(process.env.PORT ?? 3001)
 
 app.use(cors({ origin: process.env.CORS_ORIGIN ?? true, credentials: true }))
-app.use(express.json())
+app.use(express.json({ limit: '8mb' }))
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'pmss-api' })
@@ -47,6 +49,8 @@ app.use('/dashboard', dashboardRoutes)
 app.use('/reports', reportsRoutes)
 app.use('/notifications', notificationsRoutes)
 app.use('/finance', financeRoutes)
+app.use('/service-reports', serviceReportRoutes)
+app.use('/office-reports', officeReportRoutes)
 
 const serveWeb =
   process.env.SERVE_WEB === '1' ||
