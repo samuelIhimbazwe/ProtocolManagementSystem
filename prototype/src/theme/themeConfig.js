@@ -1,9 +1,9 @@
 /**
- * Option A — frozen baseline (also applied via CSS when data-theme="a").
- * Option B — flower-inspired cream / gold / taupe.
+ * Brand themes (A/B) + light/dark color mode.
  */
 
 export const THEME_STORAGE_KEY = 'pmss-ui-theme'
+export const COLOR_MODE_STORAGE_KEY = 'pmss-color-mode'
 
 export const THEMES = {
   a: {
@@ -16,6 +16,11 @@ export const THEMES = {
     label: 'Cream & gold',
     short: 'Softer cream surfaces with gold accents for a lighter feel.',
   },
+}
+
+export const COLOR_MODES = {
+  light: { id: 'light', label: 'Light' },
+  dark: { id: 'dark', label: 'Dark' },
 }
 
 /** One-time: return to Option A after B preview (respects Settings afterward). */
@@ -36,7 +41,24 @@ export function readStoredTheme() {
   return 'a'
 }
 
+export function readStoredColorMode() {
+  try {
+    const v = localStorage.getItem(COLOR_MODE_STORAGE_KEY)
+    if (v === 'light' || v === 'dark') return v
+    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark'
+  } catch {
+    /* ignore */
+  }
+  return 'light'
+}
+
 export function applyThemeToDocument(themeId) {
   const id = themeId === 'b' ? 'b' : 'a'
   document.documentElement.dataset.theme = id
+}
+
+export function applyColorModeToDocument(mode) {
+  const next = mode === 'dark' ? 'dark' : 'light'
+  document.documentElement.dataset.colorMode = next
+  document.documentElement.style.colorScheme = next
 }

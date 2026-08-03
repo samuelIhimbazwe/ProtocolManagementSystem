@@ -5,11 +5,23 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  html,
+  body,
+  #root {
+    max-width: 100%;
+  }
+
   body {
     @apply font-sans text-neutral-800 antialiased;
     background-color: var(--pmss-bg-page);
     font-family: var(--pmss-font-sans);
     font-feature-settings: 'kern' 1, 'liga' 1;
+    overflow-x: clip;
   }
 
   h1,
@@ -17,15 +29,89 @@
   h3 {
     @apply font-semibold tracking-tight text-neutral-900;
   }
+
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100%;
+    height: auto;
+  }
 }
 
 @layer components {
   .pmss-app-shell {
     background-color: var(--pmss-bg-page);
+    min-width: 0;
+  }
+
+  .pmss-scroll-x {
+    @apply overflow-x-auto overscroll-x-contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pmss-scroll-x-fade {
+    @apply pmss-scroll-x;
+    mask-image: linear-gradient(to right, #000 88%, transparent);
+  }
+
+  .pmss-tab-rail {
+    @apply flex gap-1 sm:gap-2 overflow-x-auto overscroll-x-contain pb-1 -mx-1 px-1;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .pmss-tab-rail > * {
+    @apply shrink-0;
+  }
+
+  .pmss-data-table {
+    @apply w-full text-sm;
+  }
+
+  .pmss-data-table thead th:first-child,
+  .pmss-data-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--pmss-surface);
+  }
+
+  .pmss-data-table thead th:first-child {
+    background: rgb(var(--pmss-neutral-50));
+  }
+
+  .pmss-mobile-nav {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    min-height: calc(4rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .pmss-mobile-nav-label {
+    @apply max-w-[4.5rem] truncate leading-tight;
+  }
+
+  .pmss-main-scroll {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (min-width: 768px) {
+    .pmss-main-scroll {
+      padding-bottom: 2.5rem;
+    }
+  }
+
+  .pmss-topbar {
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+  }
+
+  .pmss-bulletin {
+    @apply pmss-card p-4 sm:p-6 md:p-10 border-neutral-400 max-w-3xl mx-auto text-neutral-900 overflow-x-auto;
+    background-color: var(--pmss-surface);
   }
 
   [data-theme='a'] .pmss-sidebar {
-    background: linear-gradient(180deg, var(--pmss-primary-800) 0%, var(--pmss-primary-700) 55%, #152536 100%);
+    background: linear-gradient(180deg, rgb(var(--pmss-primary-800)) 0%, rgb(var(--pmss-primary-700)) 55%, #152536 100%);
     border-right: 1px solid rgb(16 42 67 / 0.4);
     color: white;
   }
@@ -43,7 +129,8 @@
   }
 
   .pmss-card {
-    @apply bg-white border;
+    @apply border;
+    background-color: var(--pmss-surface);
     border-radius: var(--pmss-radius-card);
     box-shadow: var(--pmss-shadow-card);
     border-color: color-mix(in srgb, var(--pmss-border-soft) 85%, transparent);
@@ -55,7 +142,8 @@
   }
 
   .pmss-auth-card {
-    @apply bg-white shadow-auth p-6 md:p-8;
+    @apply shadow-auth p-6 md:p-8;
+    background-color: var(--pmss-surface);
     border-radius: var(--pmss-radius-auth);
     border: 1px solid var(--pmss-border-soft);
   }
@@ -78,8 +166,10 @@
   }
 
   .pmss-input {
-    @apply w-full h-11 px-3.5 bg-white text-sm text-neutral-900
+    @apply w-full h-11 px-3.5 text-sm
       placeholder:text-neutral-400 focus:outline-none focus:border-primary-600;
+    background-color: var(--pmss-surface);
+    color: rgb(var(--pmss-neutral-900));
     border-radius: var(--pmss-radius-input);
     border: 1px solid var(--pmss-border-soft);
     box-shadow: none;
@@ -88,19 +178,37 @@
     box-shadow: 0 0 0 2px var(--pmss-focus-ring);
   }
   .pmss-btn-primary {
-    @apply inline-flex items-center justify-center gap-2 h-11 px-5 bg-primary-600 text-white text-sm font-semibold tracking-wide
-      hover:bg-primary-700 transition-colors disabled:opacity-50 shadow-sm;
+    @apply inline-flex items-center justify-center gap-2 h-11 px-5 text-white text-sm font-semibold tracking-wide
+      transition-colors disabled:opacity-50 shadow-sm;
+    background-color: var(--pmss-btn-bg);
     border-radius: var(--pmss-radius-button);
   }
+  .pmss-btn-primary:hover {
+    background-color: var(--pmss-btn-bg-hover);
+  }
+  .pmss-btn-chip-primary {
+    @apply text-white shadow-sm;
+    background-color: var(--pmss-btn-bg);
+  }
+  .pmss-btn-chip-primary:hover {
+    background-color: var(--pmss-btn-bg-hover);
+  }
   .pmss-btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 h-10 px-5 bg-white border text-sm font-medium
+    @apply inline-flex items-center justify-center gap-2 h-10 px-5 border text-sm font-medium
       text-neutral-700 hover:bg-neutral-50 transition-colors;
+    background-color: var(--pmss-surface);
     border-radius: var(--pmss-radius-button);
     border-color: var(--pmss-border-soft);
   }
+  .pmss-btn-primary,
+  .pmss-btn-secondary,
   .pmss-btn-outline-accent {
-    @apply inline-flex items-center justify-center gap-2 h-11 px-5 bg-white text-sm font-semibold
+    max-width: 100%;
+  }
+  .pmss-btn-outline-accent {
+    @apply inline-flex items-center justify-center gap-2 h-11 px-5 text-sm font-semibold
       transition-colors;
+    background-color: var(--pmss-surface);
     border-radius: var(--pmss-radius-button);
     border: 1px solid var(--pmss-outline-accent-border);
     color: var(--pmss-outline-accent-text);
@@ -115,20 +223,15 @@
     @apply inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold
       transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pmss-focus-ring)] focus-visible:ring-offset-1;
   }
-  .pmss-btn-chip-primary {
-    @apply bg-primary-600 text-white shadow-sm hover:bg-primary-700;
-  }
   .pmss-btn-chip-secondary {
-    @apply bg-white text-neutral-700 border border-neutral-200 shadow-sm hover:bg-neutral-50 hover:border-neutral-300;
+    @apply text-neutral-700 border border-neutral-200 shadow-sm hover:bg-neutral-50 hover:border-neutral-300;
+    background-color: var(--pmss-surface);
   }
   .pmss-btn-chip-accent {
     @apply bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100;
   }
   .pmss-btn-chip-danger {
     @apply bg-red-50 text-red-700 border border-red-200 hover:bg-red-100;
-  }
-  .pmss-bulletin {
-    @apply pmss-card p-6 md:p-10 bg-white border-neutral-400 max-w-3xl mx-auto text-neutral-900;
   }
   .pmss-bulletin--choir {
     @apply max-w-5xl;
@@ -233,6 +336,7 @@
   }
   .pmss-choir-grid {
     @apply w-full border-collapse text-sm border border-neutral-800;
+    min-width: 36rem;
   }
   .pmss-choir-th {
     @apply border border-neutral-800 px-2 py-1.5 text-xs font-bold uppercase text-center;
@@ -314,7 +418,7 @@
     @apply bg-neutral-50/35;
   }
   .pmss-list-view-table tbody tr:hover {
-    background-color: color-mix(in srgb, var(--pmss-primary-50) 45%, transparent);
+    background-color: color-mix(in srgb, rgb(var(--pmss-primary-50)) 45%, transparent);
   }
   .pmss-list-cell-primary {
     @apply font-medium text-neutral-900;
@@ -323,10 +427,10 @@
     @apply text-neutral-500 text-xs font-medium tabular-nums;
   }
   .pmss-list-cell-wrap {
-    @apply whitespace-normal min-w-[12rem];
+    @apply whitespace-normal min-w-[8rem] sm:min-w-[12rem];
   }
   .pmss-list-cell-actions {
-    @apply bg-neutral-50/50 border-l border-neutral-100 min-w-[11rem];
+    @apply bg-neutral-50/50 border-l border-neutral-100 min-w-[8rem] sm:min-w-[11rem];
   }
   .pmss-list-date-pill {
     @apply inline-flex items-center px-2.5 py-1 rounded-md bg-neutral-100 text-neutral-700 text-xs font-semibold tabular-nums;
@@ -400,7 +504,7 @@
     @apply text-red-600;
   }
   .pmss-list-status-picker {
-    @apply inline-flex flex-wrap gap-1 p-1 rounded-lg bg-neutral-100/80 border border-neutral-200/80;
+    @apply inline-flex flex-wrap gap-1 p-1 rounded-lg bg-neutral-100/80 border border-neutral-200/80 max-w-full;
   }
   .pmss-list-status-option {
     @apply px-2.5 py-1.5 rounded-md text-xs font-semibold text-neutral-600 border border-transparent
@@ -606,8 +710,8 @@
   }
 
   [data-theme='b'] .pmss-badge-primary {
-    background-color: var(--pmss-accent-50);
-    color: var(--pmss-accent-700);
+    background-color: rgb(var(--pmss-accent-50));
+    color: rgb(var(--pmss-accent-700));
     border: 1px solid var(--pmss-gold-light);
   }
 
@@ -619,6 +723,37 @@
 
   [data-theme='b'] .pmss-list-view-table thead th {
     @apply tracking-[0.16em] text-[10px];
+  }
+
+  /* Dark mode surface bridge for hard-coded bg-white utilities */
+  [data-color-mode='dark'] .bg-white {
+    background-color: var(--pmss-surface) !important;
+  }
+  [data-color-mode='dark'] .bg-white\/95,
+  [data-color-mode='dark'] .bg-white\/90,
+  [data-color-mode='dark'] .bg-white\/80 {
+    background-color: color-mix(in srgb, var(--pmss-surface) 92%, transparent) !important;
+  }
+  [data-color-mode='dark'] .hover\:bg-white\/60:hover {
+    background-color: color-mix(in srgb, var(--pmss-surface) 60%, transparent) !important;
+  }
+  [data-color-mode='dark'] .pmss-topbar,
+  [data-color-mode='dark'] .pmss-mobile-nav {
+    background-color: color-mix(in srgb, var(--pmss-surface) 94%, transparent) !important;
+    border-color: var(--pmss-border-soft);
+  }
+  [data-color-mode='dark'][data-theme='a'] .pmss-sidebar {
+    background: linear-gradient(180deg, #0c1219 0%, #121a24 55%, #0a0e14 100%);
+    border-right-color: rgb(255 255 255 / 0.06);
+  }
+  [data-color-mode='dark'] .pmss-bulletin {
+    background-color: var(--pmss-surface);
+    color: rgb(var(--pmss-neutral-900));
+  }
+  [data-color-mode='dark'] select,
+  [data-color-mode='dark'] option {
+    background-color: var(--pmss-surface);
+    color: rgb(var(--pmss-neutral-900));
   }
 }
 

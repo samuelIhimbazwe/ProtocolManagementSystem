@@ -3,37 +3,37 @@ import { LayoutGrid, List, Newspaper, Printer } from 'lucide-react'
 export default function DisplayFormatToggle({ format, onChange, bulletinId, showPrint = true }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs font-medium text-neutral-500 mr-1">View</span>
-      <div className="inline-flex rounded-lg border border-neutral-200 p-0.5 bg-neutral-50">
+      <span className="text-xs font-medium text-neutral-500 mr-1 hidden sm:inline">View</span>
+      <div className="inline-flex rounded-lg border border-neutral-200 p-0.5 bg-neutral-50 max-w-full overflow-x-auto">
         <button
           type="button"
           onClick={() => onChange('cards')}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+          className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition-colors shrink-0 ${
             format === 'cards' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-600 hover:text-neutral-900'
           }`}
         >
           <LayoutGrid className="w-3.5 h-3.5" />
-          Cards
+          <span className="hidden sm:inline">Cards</span>
         </button>
         <button
           type="button"
           onClick={() => onChange('list')}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+          className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition-colors shrink-0 ${
             format === 'list' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-600 hover:text-neutral-900'
           }`}
         >
           <List className="w-3.5 h-3.5" />
-          List
+          <span className="hidden sm:inline">List</span>
         </button>
         <button
           type="button"
           onClick={() => onChange('bulletin')}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+          className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition-colors shrink-0 ${
             format === 'bulletin' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-600 hover:text-neutral-900'
           }`}
         >
           <Newspaper className="w-3.5 h-3.5" />
-          Bulletin
+          <span className="hidden sm:inline">Bulletin</span>
         </button>
       </div>
       {showPrint && format === 'bulletin' && bulletinId && (
@@ -43,7 +43,8 @@ export default function DisplayFormatToggle({ format, onChange, bulletinId, show
           onClick={() => window.print()}
         >
           <Printer className="w-3.5 h-3.5" />
-          Print bulletin
+          <span className="hidden sm:inline">Print bulletin</span>
+          <span className="sm:hidden">Print</span>
         </button>
       )}
     </div>
