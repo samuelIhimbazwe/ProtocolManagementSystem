@@ -27,6 +27,13 @@ import {
   downloadReportsExcel,
   downloadReportsPdf,
 } from '../lib/reportsExport'
+import {
+  MINISTRY_REPORT_BLOCKS,
+  MINISTRY_REPORT_PRESETS,
+  defaultIncludeMap,
+  slugifyTitle,
+} from '../lib/reportBuilder'
+import ReportBuilder from '../components/ReportBuilder'
 import ScheduleDownloadMenu from '../components/ScheduleDownloadMenu'
 
 const SECTIONS = [
@@ -43,7 +50,7 @@ const SECTIONS = [
 
 function SectionNav({ section, onChange }) {
   return (
-    <div className="flex flex-wrap gap-1 mb-6 p-1 rounded-xl bg-neutral-100/80 border border-neutral-200/80 pmss-no-print">
+    <div className="pmss-tab-rail mb-6 p-1 rounded-xl bg-neutral-100/80 border border-neutral-200/80 pmss-no-print">
       {SECTIONS.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
@@ -78,6 +85,9 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
+  const [builderTitle, setBuilderTitle] = useState('Ministry Report')
+  const [builderSubtitle, setBuilderSubtitle] = useState('')
+  const [builderInclude, setBuilderInclude] = useState(() => defaultIncludeMap(MINISTRY_REPORT_BLOCKS))
 
   const showToast = (msg) => {
     setToast(msg)
@@ -138,21 +148,33 @@ export default function ReportsPage() {
   const att = report?.attendance?.monthly ?? {}
   const pub = report?.schedule?.published ?? {}
 
-  const exportReport = (format) => {
+  useEffect(() => {
+    const month = report?.overview?.monthLabel
+    if (month) setBuilderTitle(`${month} Ministry Report`)
+  }, [report?.overview?.monthLabel])
+
+  const exportOptions = () => ({
+    title: builderTitle.trim() || 'Ministry Report',
+    subtitle: builderSubtitle.trim(),
+    include: builderInclude,
+  })
+
+  const exportReport = (format, options) => {
     if (!report) {
       showToast('Report not loaded yet')
       return
     }
     try {
-      const stamp = (report.overview?.monthLabel ?? 'report').replace(/\s+/g, '-').toLowerCase()
+      const opts = options ?? exportOptions()
+      const stamp = slugifyTitle(opts.title || report.overview?.monthLabel || 'report')
       if (format === 'csv') {
-        downloadReportsCsv(report, `pmss-ministry-report-${stamp}.csv`)
+        downloadReportsCsv(report, `pmss-ministry-report-${stamp}.csv`, opts)
         showToast('Report downloaded (CSV)')
       } else if (format === 'excel') {
-        downloadReportsExcel(report, `pmss-ministry-report-${stamp}.xls`)
+        downloadReportsExcel(report, `pmss-ministry-report-${stamp}.xls`, opts)
         showToast('Report downloaded (Excel)')
       } else if (format === 'pdf') {
-        downloadReportsPdf(report)
+        downloadReportsPdf(report, opts)
         showToast('Use Print → Save as PDF')
       }
     } catch (err) {
@@ -222,6 +244,20 @@ export default function ReportsPage() {
           {error} — showing best available data.
         </p>
       )}
+
+      <ReportBuilder
+        title={builderTitle}
+        onTitleChange={setBuilderTitle}
+        subtitle={builderSubtitle}
+        onSubtitleChange={setBuilderSubtitle}
+        blocks={MINISTRY_REPORT_BLOCKS}
+        include={builderInclude}
+        onIncludeChange={setBuilderInclude}
+        presets={MINISTRY_REPORT_PRESETS}
+        onExport={(format) => exportReport(format, exportOptions())}
+        disabled={!report || loading}
+        hint="Build a full ministry pack or a focused export — cover, attendance, scheduling, roster, and activity."
+      />
 
       <SectionNav section={section} onChange={setSection} />
 
