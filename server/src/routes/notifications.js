@@ -93,9 +93,9 @@ function parseMeta(raw) {
   }
 }
 
-function readIdsForUser(userId) {
+async function readIdsForUser(userId) {
   const readKey = `notifications_read_${userId}`
-  const readRow = db.prepare(`SELECT value_json FROM app_settings WHERE key = ?`).get(readKey)
+  const readRow = await db.prepare(`SELECT value_json FROM app_settings WHERE key = ?`).get(readKey)
   try {
     return JSON.parse(readRow?.value_json ?? '[]').map(String)
   } catch {
@@ -129,9 +129,9 @@ function formatItem(row, readSet) {
   }
 }
 
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   const placeholders = [...NOTIFICATION_ACTIONS].map(() => '?').join(', ')
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT id, action, meta_json, created_at FROM audit_log
        WHERE action IN (${placeholders})
@@ -140,12 +140,12 @@ router.get('/', authMiddleware, (req, res) => {
     )
     .all(...NOTIFICATION_ACTIONS)
 
-  const readSet = new Set(readIdsForUser(req.auth.sub))
+  const readSet = new Set(await readIdsForUser(req.auth.sub))
   let items = rows.map((r) => formatItem(r, readSet)).filter(Boolean)
 
   // If the log has no ministry-facing events yet, surface the latest published schedule.
   if (items.length === 0) {
-    const pub = db
+    const pub = await db
       .prepare(
         `SELECT id, version_label, month_key, published_at, payload_json
          FROM schedule_versions
@@ -179,14 +179,14 @@ router.get('/', authMiddleware, (req, res) => {
   return res.json({ notifications: items })
 })
 
-router.post('/mark-read', authMiddleware, (req, res) => {
+router.post('/mark-read', authMiddleware, async (req, res) => {
   const { ids } = req.body ?? {}
   if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids array required' })
 
   const readKey = `notifications_read_${req.auth.sub}`
-  const prev = readIdsForUser(req.auth.sub)
+  const prev = await readIdsForUser(req.auth.sub)
   const merged = [...new Set([...prev, ...ids.map(String)])]
-  db.prepare(
+  await db.prepare(
     `INSERT INTO app_settings (key, value_json) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json`,
   ).run(readKey, JSON.stringify(merged))

@@ -180,9 +180,9 @@ function mapSubmission(row) {
   }
 }
 
-function memberGoalFor(typeId, memberId, typeRow) {
+async function memberGoalFor(typeId, memberId, typeRow) {
   if (typeRow.member_goal_mode === 'custom') {
-    const custom = db
+    const custom = await db
       .prepare(
         `SELECT goal_amount FROM contribution_member_goals
          WHERE contribution_type_id = ? AND member_id = ?`,
@@ -193,8 +193,8 @@ function memberGoalFor(typeId, memberId, typeRow) {
   return typeRow.member_goal ?? 0
 }
 
-function confirmedTotalForMember(typeId, memberId) {
-  const row = db
+async function confirmedTotalForMember(typeId, memberId) {
+  const row = await db
     .prepare(
       `SELECT COALESCE(SUM(
          CASE
@@ -210,8 +210,8 @@ function confirmedTotalForMember(typeId, memberId) {
   return row?.total ?? 0
 }
 
-function ministryCollected(typeId) {
-  const row = db
+async function ministryCollected(typeId) {
+  const row = await db
     .prepare(
       `SELECT COALESCE(SUM(
          CASE
@@ -227,25 +227,25 @@ function ministryCollected(typeId) {
   return row?.total ?? 0
 }
 
-function ensureFollowUp(submissionId, outstanding, note, actorId) {
-  let fu = db
+async function ensureFollowUp(submissionId, outstanding, note, actorId) {
+  let fu = await db
     .prepare(`SELECT * FROM contribution_followups WHERE submission_id = ?`)
     .get(submissionId)
   if (!fu) {
     const id = uuid()
-    db.prepare(
+    await db.prepare(
       `INSERT INTO contribution_followups (id, submission_id, outstanding_amount, status)
        VALUES (?, ?, ?, 'open')`,
     ).run(id, submissionId, outstanding)
-    fu = db.prepare(`SELECT * FROM contribution_followups WHERE id = ?`).get(id)
+    fu = await db.prepare(`SELECT * FROM contribution_followups WHERE id = ?`).get(id)
   } else {
-    db.prepare(
+    await db.prepare(
       `UPDATE contribution_followups SET outstanding_amount = ?, status = 'open',
        updated_at = datetime('now'), resolved_at = NULL WHERE id = ?`,
     ).run(outstanding, fu.id)
   }
   if (note) {
-    db.prepare(
+    await db.prepare(
       `INSERT INTO contribution_followup_notes (id, followup_id, author_user_id, body)
        VALUES (?, ?, ?, ?)`,
     ).run(uuid(), fu.id, actorId ?? null, note)
@@ -254,69 +254,74 @@ function ensureFollowUp(submissionId, outstanding, note, actorId) {
 }
 
 /** GET /finance/summary — role-aware home widgets */
-router.get('/summary', authMiddleware, (req, res) => {
+router.get('/summary', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_ROLES)) return
 
-  const pending = db
-    .prepare(`SELECT COUNT(*) AS c FROM contribution_submissions WHERE status = 'pending'`)
-    .get().c
-  const activeTypes = db
-    .prepare(`SELECT COUNT(*) AS c FROM contribution_types WHERE status = 'Active'`)
-    .get().c
-  const collected = db
-    .prepare(
-      `SELECT COALESCE(SUM(
+  const pending = (
+    await db
+      .prepare(`SELECT COUNT(*) AS c FROM contribution_submissions WHERE status = 'pending'`)
+      .get()
+  ).c
+  const activeTypes = (
+    await db
+      .prepare(`SELECT COUNT(*) AS c FROM contribution_types WHERE status = 'Active'`)
+      .get()
+  ).c
+  const collected = (
+    await db
+      .prepare(
+        `SELECT COALESCE(SUM(
          CASE
            WHEN status = 'confirmed' THEN COALESCE(confirmed_amount, claimed_amount)
            WHEN status = 'partial' THEN COALESCE(confirmed_amount, 0)
            ELSE 0
          END
        ), 0) AS total FROM contribution_submissions`,
-    )
-    .get().total
-  const outstanding = db
-    .prepare(
-      `SELECT COALESCE(SUM(outstanding_amount), 0) AS total
+      )
+      .get()
+  ).total
+  const outstanding = (
+    await db
+      .prepare(
+        `SELECT COALESCE(SUM(outstanding_amount), 0) AS total
        FROM contribution_followups WHERE status IN ('open', 'in_progress')`,
-    )
-    .get().total
+      )
+      .get()
+  ).total
 
-  const types = db
+  const types = (await db
     .prepare(`SELECT * FROM contribution_types WHERE status = 'Active' ORDER BY name`)
-    .all()
-    .map(mapType)
+    .all()).map(mapType)
 
   let memberProgress = null
   if (req.auth.role === 'member' && req.auth.memberId) {
     const mid = req.auth.memberId
-    memberProgress = types
-      .filter((t) => t.visibility === 'public' || true)
-      .map((t) => {
-        const row = db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(t.id)
-        const goal = memberGoalFor(t.id, mid, row)
-        const paid = confirmedTotalForMember(t.id, mid)
-        const remaining = Math.max(0, goal - paid)
-        return {
-          ...t,
-          memberGoal: goal,
-          paid,
-          remaining,
-          progressPct: goal > 0 ? Math.min(100, Math.round((paid / goal) * 100)) : 0,
-        }
+    memberProgress = []
+    for (const t of types.filter((x) => x.visibility === 'public' || true)) {
+      const row = await db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(t.id)
+      const goal = await memberGoalFor(t.id, mid, row)
+      const paid = await confirmedTotalForMember(t.id, mid)
+      const remaining = Math.max(0, goal - paid)
+      memberProgress.push({
+        ...t,
+        memberGoal: goal,
+        paid,
+        remaining,
+        progressPct: goal > 0 ? Math.min(100, Math.round((paid / goal) * 100)) : 0,
       })
+    }
   }
 
-  const publicGoals = types
-    .filter((t) => t.visibility === 'public')
-    .map((t) => {
-      const collectedAmt = ministryCollected(t.id)
-      return {
-        ...t,
-        collected: collectedAmt,
-        progressPct:
-          t.ministryGoal > 0 ? Math.min(100, Math.round((collectedAmt / t.ministryGoal) * 100)) : 0,
-      }
+  const publicGoals = []
+  for (const t of types.filter((x) => x.visibility === 'public')) {
+    const collectedAmt = await ministryCollected(t.id)
+    publicGoals.push({
+      ...t,
+      collected: collectedAmt,
+      progressPct:
+        t.ministryGoal > 0 ? Math.min(100, Math.round((collectedAmt / t.ministryGoal) * 100)) : 0,
     })
+  }
 
   const leadership =
     req.auth.role !== 'member'
@@ -336,29 +341,28 @@ router.get('/summary', authMiddleware, (req, res) => {
     leadership,
     memberProgress,
     publicGoals,
-    methods: db
+    methods: (await db
       .prepare(`SELECT * FROM payment_methods WHERE active = 1 ORDER BY sort_order, label`)
-      .all()
-      .map(mapMethod),
+      .all()).map(mapMethod),
   })
 })
 
 /** Payment methods */
-router.get('/methods', authMiddleware, (req, res) => {
+router.get('/methods', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_ROLES)) return
   const all = req.auth.role === 'treasurer'
   const rows = all
-    ? db.prepare(`SELECT * FROM payment_methods ORDER BY sort_order, label`).all()
-    : db.prepare(`SELECT * FROM payment_methods WHERE active = 1 ORDER BY sort_order, label`).all()
+    ? await db.prepare(`SELECT * FROM payment_methods ORDER BY sort_order, label`).all()
+    : await db.prepare(`SELECT * FROM payment_methods WHERE active = 1 ORDER BY sort_order, label`).all()
   return res.json({ methods: rows.map(mapMethod) })
 })
 
-router.post('/methods', authMiddleware, (req, res) => {
+router.post('/methods', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, MANAGE_METHODS)) return
   const { kind, label, provider, accountName, accountNumber, instructions, sortOrder } = req.body ?? {}
   if (!kind || !label?.trim()) return res.status(400).json({ error: 'kind and label required' })
   const id = uuid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO payment_methods
      (id, kind, label, provider, account_name, account_number, instructions, sort_order)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -372,16 +376,16 @@ router.post('/methods', authMiddleware, (req, res) => {
     instructions ?? null,
     Number(sortOrder) || 0,
   )
-  audit('finance.method.create', req.auth.sub, { id, label })
-  return res.status(201).json({ method: mapMethod(db.prepare(`SELECT * FROM payment_methods WHERE id = ?`).get(id)) })
+  await audit('finance.method.create', req.auth.sub, { id, label })
+  return res.status(201).json({ method: mapMethod(await db.prepare(`SELECT * FROM payment_methods WHERE id = ?`).get(id)) })
 })
 
-router.put('/methods/:id', authMiddleware, (req, res) => {
+router.put('/methods/:id', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, MANAGE_METHODS)) return
-  const existing = db.prepare(`SELECT * FROM payment_methods WHERE id = ?`).get(req.params.id)
+  const existing = await db.prepare(`SELECT * FROM payment_methods WHERE id = ?`).get(req.params.id)
   if (!existing) return res.status(404).json({ error: 'Not found' })
   const b = req.body ?? {}
-  db.prepare(
+  await db.prepare(
     `UPDATE payment_methods SET
       kind = ?, label = ?, provider = ?, account_name = ?, account_number = ?,
       instructions = ?, sort_order = ?, active = ?, updated_at = datetime('now')
@@ -397,25 +401,25 @@ router.put('/methods/:id', authMiddleware, (req, res) => {
     b.active !== undefined ? (b.active ? 1 : 0) : existing.active,
     req.params.id,
   )
-  audit('finance.method.update', req.auth.sub, { id: req.params.id })
-  return res.json({ method: mapMethod(db.prepare(`SELECT * FROM payment_methods WHERE id = ?`).get(req.params.id)) })
+  await audit('finance.method.update', req.auth.sub, { id: req.params.id })
+  return res.json({ method: mapMethod(await db.prepare(`SELECT * FROM payment_methods WHERE id = ?`).get(req.params.id)) })
 })
 
-router.delete('/methods/:id', authMiddleware, (req, res) => {
+router.delete('/methods/:id', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, MANAGE_METHODS)) return
-  db.prepare(`UPDATE payment_methods SET active = 0, updated_at = datetime('now') WHERE id = ?`).run(
+  await db.prepare(`UPDATE payment_methods SET active = 0, updated_at = datetime('now') WHERE id = ?`).run(
     req.params.id,
   )
-  audit('finance.method.deactivate', req.auth.sub, { id: req.params.id })
+  await audit('finance.method.deactivate', req.auth.sub, { id: req.params.id })
   return res.json({ ok: true })
 })
 
 /** Contribution types */
-router.get('/types', authMiddleware, (req, res) => {
+router.get('/types', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_ROLES)) return
   let rows
   if (req.auth.role === 'member') {
-    rows = db
+    rows = await db
       .prepare(
         `SELECT * FROM contribution_types
          WHERE status = 'Active' AND (visibility = 'public' OR visibility = 'private')
@@ -424,22 +428,23 @@ router.get('/types', authMiddleware, (req, res) => {
       .all()
     // Members see private types for payment obligation, but ministry totals only if public
   } else {
-    rows = db.prepare(`SELECT * FROM contribution_types ORDER BY status, name`).all()
+    rows = await db.prepare(`SELECT * FROM contribution_types ORDER BY status, name`).all()
   }
-  const types = rows.map((r) => {
+  const types = []
+  for (const r of rows) {
     const t = mapType(r)
-    const collected = ministryCollected(r.id)
-    return {
+    const collected = await ministryCollected(r.id)
+    types.push({
       ...t,
       collected,
       progressPct: t.ministryGoal > 0 ? Math.min(100, Math.round((collected / t.ministryGoal) * 100)) : 0,
       showMinistryGoal: t.visibility === 'public' || req.auth.role !== 'member',
-    }
-  })
+    })
+  }
   return res.json({ types })
 })
 
-router.post('/types', authMiddleware, (req, res) => {
+router.post('/types', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, MANAGE_TYPES)) return
   const b = req.body ?? {}
   if (!b.name?.trim()) return res.status(400).json({ error: 'name required' })
@@ -447,7 +452,7 @@ router.post('/types', authMiddleware, (req, res) => {
     return res.status(400).json({ error: 'deadline required unless continuous' })
   }
   const id = uuid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO contribution_types
      (id, name, description, category, status, frequency, ministry_goal, member_goal,
       member_goal_mode, visibility, start_date, deadline, created_by_user_id)
@@ -469,20 +474,21 @@ router.post('/types', authMiddleware, (req, res) => {
   )
   if (Array.isArray(b.memberGoals)) {
     const ins = db.prepare(
-      `INSERT OR REPLACE INTO contribution_member_goals (contribution_type_id, member_id, goal_amount)
-       VALUES (?, ?, ?)`,
+      `INSERT INTO contribution_member_goals (contribution_type_id, member_id, goal_amount)
+       VALUES (?, ?, ?)
+       ON CONFLICT(contribution_type_id, member_id) DO UPDATE SET goal_amount = excluded.goal_amount`,
     )
     for (const g of b.memberGoals) {
-      if (g.memberId) ins.run(id, g.memberId, Number(g.goalAmount) || 0)
+      if (g.memberId) await ins.run(id, g.memberId, Number(g.goalAmount) || 0)
     }
   }
-  audit('finance.type.create', req.auth.sub, { id, name: b.name })
-  return res.status(201).json({ type: mapType(db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(id)) })
+  await audit('finance.type.create', req.auth.sub, { id, name: b.name })
+  return res.status(201).json({ type: mapType(await db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(id)) })
 })
 
-router.put('/types/:id', authMiddleware, (req, res) => {
+router.put('/types/:id', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, MANAGE_TYPES)) return
-  const existing = db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(req.params.id)
+  const existing = await db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(req.params.id)
   if (!existing) return res.status(404).json({ error: 'Not found' })
   const b = req.body ?? {}
 
@@ -493,7 +499,7 @@ router.put('/types/:id', authMiddleware, (req, res) => {
     return forbid(res)
   }
 
-  db.prepare(
+  await db.prepare(
     `UPDATE contribution_types SET
       name = ?, description = ?, category = ?, status = ?, frequency = ?,
       ministry_goal = ?, member_goal = ?, member_goal_mode = ?, visibility = ?,
@@ -513,25 +519,25 @@ router.put('/types/:id', authMiddleware, (req, res) => {
     b.deadline !== undefined ? b.deadline : existing.deadline,
     req.params.id,
   )
-  audit('finance.type.update', req.auth.sub, { id: req.params.id })
+  await audit('finance.type.update', req.auth.sub, { id: req.params.id })
   return res.json({
-    type: mapType(db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(req.params.id)),
+    type: mapType(await db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(req.params.id)),
   })
 })
 
-router.delete('/types/:id', authMiddleware, (req, res) => {
+router.delete('/types/:id', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, new Set(['treasurer']))) return
-  const existing = db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(req.params.id)
+  const existing = await db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(req.params.id)
   if (!existing) return res.status(404).json({ error: 'Not found' })
-  db.prepare(`UPDATE contribution_types SET status = 'Closed', updated_at = datetime('now') WHERE id = ?`).run(
+  await db.prepare(`UPDATE contribution_types SET status = 'Closed', updated_at = datetime('now') WHERE id = ?`).run(
     req.params.id,
   )
-  audit('finance.type.close', req.auth.sub, { id: req.params.id })
+  await audit('finance.type.close', req.auth.sub, { id: req.params.id })
   return res.json({ ok: true })
 })
 
 /** Submissions */
-router.get('/submissions', authMiddleware, (req, res) => {
+router.get('/submissions', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_ROLES)) return
   const { status, typeId, memberId } = req.query
   const clauses = []
@@ -557,7 +563,7 @@ router.get('/submissions', authMiddleware, (req, res) => {
   }
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT s.*, t.name AS contribution_name, m.name AS member_name, m.phone AS member_phone,
         pm.label AS payment_method_label, u.display_name AS verified_by_name,
@@ -592,7 +598,7 @@ router.get('/submissions', authMiddleware, (req, res) => {
   })
 })
 
-router.post('/submissions', authMiddleware, (req, res) => {
+router.post('/submissions', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_ROLES)) return
   const b = req.body ?? {}
   const memberId = req.auth.role === 'member' ? req.auth.memberId : b.memberId
@@ -600,7 +606,7 @@ router.post('/submissions', authMiddleware, (req, res) => {
   if (!b.contributionTypeId || !b.paymentDate || b.claimedAmount == null) {
     return res.status(400).json({ error: 'contributionTypeId, paymentDate, claimedAmount required' })
   }
-  const type = db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(b.contributionTypeId)
+  const type = await db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(b.contributionTypeId)
   if (!type || type.status !== 'Active') return res.status(400).json({ error: 'Invalid contribution type' })
 
   const claimed = Math.round(Number(b.claimedAmount))
@@ -614,7 +620,7 @@ router.post('/submissions', authMiddleware, (req, res) => {
     return res.status(err.status ?? 400).json({ error: err.message ?? 'Invalid evidence file' })
   }
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO contribution_submissions
      (id, contribution_type_id, member_id, payment_date, claimed_amount, payment_method_id,
       evidence_note, evidence_file_name, evidence_file_mime, evidence_file_path, status)
@@ -631,13 +637,13 @@ router.post('/submissions', authMiddleware, (req, res) => {
     savedEvidence?.mime ?? null,
     savedEvidence?.relativePath ?? null,
   )
-  audit('finance.submission.create', req.auth.sub, {
+  await audit('finance.submission.create', req.auth.sub, {
     id,
     memberId,
     claimed,
     hasEvidenceFile: Boolean(savedEvidence),
   })
-  const row = db
+  const row = await db
     .prepare(
       `SELECT s.*, t.name AS contribution_name, m.name AS member_name, m.phone AS member_phone
        FROM contribution_submissions s
@@ -649,9 +655,9 @@ router.post('/submissions', authMiddleware, (req, res) => {
   return res.status(201).json({ submission: mapSubmission(row) })
 })
 
-router.get('/submissions/:id/evidence', authMiddleware, (req, res) => {
+router.get('/submissions/:id/evidence', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_ROLES)) return
-  const sub = db.prepare(`SELECT * FROM contribution_submissions WHERE id = ?`).get(req.params.id)
+  const sub = await db.prepare(`SELECT * FROM contribution_submissions WHERE id = ?`).get(req.params.id)
   if (!sub) return res.status(404).json({ error: 'Not found' })
   if (req.auth.role === 'member' && sub.member_id !== req.auth.memberId) {
     return res.status(403).json({ error: 'Forbidden' })
@@ -669,9 +675,9 @@ router.get('/submissions/:id/evidence', authMiddleware, (req, res) => {
   return res.sendFile(abs)
 })
 
-router.post('/submissions/:id/verify', authMiddleware, (req, res) => {
+router.post('/submissions/:id/verify', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VERIFY)) return
-  const sub = db.prepare(`SELECT * FROM contribution_submissions WHERE id = ?`).get(req.params.id)
+  const sub = await db.prepare(`SELECT * FROM contribution_submissions WHERE id = ?`).get(req.params.id)
   if (!sub) return res.status(404).json({ error: 'Not found' })
   if (sub.status !== 'pending' && sub.status !== 'partial') {
     return res.status(400).json({ error: 'Only pending or partial submissions can be verified' })
@@ -683,15 +689,15 @@ router.post('/submissions/:id/verify', authMiddleware, (req, res) => {
   }
 
   if (action === 'confirm') {
-    db.prepare(
+    await db.prepare(
       `UPDATE contribution_submissions SET
         status = 'confirmed', confirmed_amount = ?, verification_note = ?,
         confirmed_at = datetime('now'), verified_by_user_id = ?
        WHERE id = ?`,
     ).run(sub.claimed_amount, note ?? null, req.auth.sub, sub.id)
-    const fu = db.prepare(`SELECT id FROM contribution_followups WHERE submission_id = ?`).get(sub.id)
+    const fu = await db.prepare(`SELECT id FROM contribution_followups WHERE submission_id = ?`).get(sub.id)
     if (fu) {
-      db.prepare(
+      await db.prepare(
         `UPDATE contribution_followups SET status = 'resolved', outstanding_amount = 0,
          updated_at = datetime('now'), resolved_at = datetime('now') WHERE id = ?`,
       ).run(fu.id)
@@ -703,25 +709,25 @@ router.post('/submissions/:id/verify', authMiddleware, (req, res) => {
     }
     if (!note?.trim()) return res.status(400).json({ error: 'explanation note required' })
     const outstanding = Math.max(0, sub.claimed_amount - received)
-    db.prepare(
+    await db.prepare(
       `UPDATE contribution_submissions SET
         status = 'partial', confirmed_amount = ?, verification_note = ?,
         confirmed_at = datetime('now'), verified_by_user_id = ?
        WHERE id = ?`,
     ).run(received, note.trim(), req.auth.sub, sub.id)
-    ensureFollowUp(sub.id, outstanding, note.trim(), req.auth.sub)
+    await ensureFollowUp(sub.id, outstanding, note.trim(), req.auth.sub)
   } else {
     if (!note?.trim()) return res.status(400).json({ error: 'note required when declining' })
-    db.prepare(
+    await db.prepare(
       `UPDATE contribution_submissions SET
         status = 'declined', confirmed_amount = 0, verification_note = ?,
         confirmed_at = datetime('now'), verified_by_user_id = ?
        WHERE id = ?`,
     ).run(note.trim(), req.auth.sub, sub.id)
-    ensureFollowUp(sub.id, sub.claimed_amount, note.trim(), req.auth.sub)
+    await ensureFollowUp(sub.id, sub.claimed_amount, note.trim(), req.auth.sub)
   }
 
-  const row = db
+  const row = await db
     .prepare(
       `SELECT s.*, t.name AS contribution_name, m.name AS member_name, m.phone AS member_phone,
         f.status AS followup_status, f.id AS followup_id, f.outstanding_amount
@@ -733,7 +739,7 @@ router.post('/submissions/:id/verify', authMiddleware, (req, res) => {
     )
     .get(sub.id)
 
-  audit('finance.submission.verify', req.auth.sub, {
+  await audit('finance.submission.verify', req.auth.sub, {
     id: sub.id,
     action,
     memberName: row?.member_name,
@@ -748,9 +754,9 @@ router.post('/submissions/:id/verify', authMiddleware, (req, res) => {
 })
 
 /** Follow-ups */
-router.get('/followups', authMiddleware, (req, res) => {
+router.get('/followups', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_LEDGER)) return
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT f.*, s.claimed_amount, s.confirmed_amount, s.status AS submission_status,
         s.verification_note, m.name AS member_name, t.name AS contribution_name
@@ -779,9 +785,9 @@ router.get('/followups', authMiddleware, (req, res) => {
   return res.json({ followups: rows })
 })
 
-router.get('/followups/:id', authMiddleware, (req, res) => {
+router.get('/followups/:id', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_LEDGER)) return
-  const r = db
+  const r = await db
     .prepare(
       `SELECT f.*, m.name AS member_name, t.name AS contribution_name, s.verification_note
        FROM contribution_followups f
@@ -792,7 +798,7 @@ router.get('/followups/:id', authMiddleware, (req, res) => {
     )
     .get(req.params.id)
   if (!r) return res.status(404).json({ error: 'Not found' })
-  const notes = db
+  const notes = await db
     .prepare(
       `SELECT n.*, u.display_name AS author_name FROM contribution_followup_notes n
        LEFT JOIN users u ON u.id = n.author_user_id
@@ -819,13 +825,13 @@ router.get('/followups/:id', authMiddleware, (req, res) => {
   })
 })
 
-router.patch('/followups/:id', authMiddleware, (req, res) => {
+router.patch('/followups/:id', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VERIFY)) return
-  const fu = db.prepare(`SELECT * FROM contribution_followups WHERE id = ?`).get(req.params.id)
+  const fu = await db.prepare(`SELECT * FROM contribution_followups WHERE id = ?`).get(req.params.id)
   if (!fu) return res.status(404).json({ error: 'Not found' })
   const { status, note, outstandingAmount } = req.body ?? {}
   const nextStatus = status ?? fu.status
-  db.prepare(
+  await db.prepare(
     `UPDATE contribution_followups SET
       status = ?,
       outstanding_amount = ?,
@@ -839,19 +845,19 @@ router.patch('/followups/:id', authMiddleware, (req, res) => {
     req.params.id,
   )
   if (note?.trim()) {
-    db.prepare(
+    await db.prepare(
       `INSERT INTO contribution_followup_notes (id, followup_id, author_user_id, body)
        VALUES (?, ?, ?, ?)`,
     ).run(uuid(), req.params.id, req.auth.sub, note.trim())
   }
-  audit('finance.followup.update', req.auth.sub, { id: req.params.id, status: nextStatus })
+  await audit('finance.followup.update', req.auth.sub, { id: req.params.id, status: nextStatus })
   return res.json({ ok: true })
 })
 
 /** Reports */
-router.get('/reports', authMiddleware, (req, res) => {
+router.get('/reports', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_REPORTS)) return
-  const byType = db
+  const byType = await db
     .prepare(
       `SELECT t.id, t.name, t.ministry_goal,
         COALESCE(SUM(CASE WHEN s.status = 'confirmed' THEN COALESCE(s.confirmed_amount, s.claimed_amount)
@@ -873,7 +879,7 @@ router.get('/reports', authMiddleware, (req, res) => {
         r.ministry_goal > 0 ? Math.min(100, Math.round((r.collected / r.ministry_goal) * 100)) : null,
     }))
 
-  const byMember = db
+  const byMember = await db
     .prepare(
       `SELECT m.id, m.name, m.phone,
         COALESCE(SUM(CASE WHEN s.status = 'confirmed' THEN COALESCE(s.confirmed_amount, s.claimed_amount)
@@ -894,7 +900,7 @@ router.get('/reports', authMiddleware, (req, res) => {
       claimed: r.claimed,
     }))
 
-  const outstanding = db
+  const outstanding = await db
     .prepare(
       `SELECT f.outstanding_amount, f.status, m.name AS member_name, t.name AS contribution_name,
         s.status AS submission_status
@@ -907,7 +913,7 @@ router.get('/reports', authMiddleware, (req, res) => {
     )
     .all()
 
-  const partials = db
+  const partials = await db
     .prepare(
       `SELECT s.*, m.name AS member_name, t.name AS contribution_name
        FROM contribution_submissions s
@@ -919,7 +925,7 @@ router.get('/reports', authMiddleware, (req, res) => {
     .all()
     .map(mapSubmission)
 
-  const declined = db
+  const declined = await db
     .prepare(
       `SELECT s.*, m.name AS member_name, t.name AS contribution_name
        FROM contribution_submissions s

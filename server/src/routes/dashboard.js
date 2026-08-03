@@ -5,8 +5,8 @@ import { getDraftPayload, getPublishedPayload } from '../lib/scheduleAccess.js'
 
 const router = Router()
 
-function latestPublishedRow() {
-  return db
+async function latestPublishedRow() {
+  return await db
     .prepare(
       `SELECT version_label, month_key, published_at FROM schedule_versions
        WHERE status = 'published' ORDER BY published_at DESC LIMIT 1`,
@@ -14,8 +14,8 @@ function latestPublishedRow() {
     .get()
 }
 
-function attendanceTotals() {
-  const rows = db
+async function attendanceTotals() {
+  const rows = await db
     .prepare(
       `SELECT r.status, COUNT(*) AS c FROM attendance_records r
        JOIN attendance_sessions s ON s.id = r.session_id
@@ -39,8 +39,8 @@ function attendanceTotals() {
   return { present, halfPresent, quarterPresent, absent, total, rate }
 }
 
-router.get('/summary', authMiddleware, (req, res) => {
-  const counts = db
+router.get('/summary', authMiddleware, async (req, res) => {
+  const counts = await db
     .prepare(
       `SELECT
          COUNT(*) AS total,
@@ -50,34 +50,38 @@ router.get('/summary', authMiddleware, (req, res) => {
     .get()
 
   const today = process.env.PMSS_TODAY ?? '2026-08-02'
-  const payload = getPublishedPayload() ?? getDraftPayload()
+  const payload = (await getPublishedPayload()) ?? (await getDraftPayload())
   const services = payload?.services ?? []
   const upcomingServices = services.filter((s) => s.date >= today).length
-  const published = latestPublishedRow()
-  const attendance = attendanceTotals()
+  const published = await latestPublishedRow()
+  const attendance = await attendanceTotals()
 
   let finance = null
   try {
-    const collected = db
-      .prepare(
-        `SELECT COALESCE(SUM(
+    const collected = (
+      await db
+        .prepare(
+          `SELECT COALESCE(SUM(
            CASE
              WHEN status = 'confirmed' THEN COALESCE(confirmed_amount, claimed_amount)
              WHEN status = 'partial' THEN COALESCE(confirmed_amount, 0)
              ELSE 0
            END
          ), 0) AS total FROM contribution_submissions`,
-      )
-      .get().total
-    const pending = db
+        )
+        .get()
+    ).total
+    const pending = (await db
       .prepare(`SELECT COUNT(*) AS c FROM contribution_submissions WHERE status = 'pending'`)
-      .get().c
-    const outstanding = db
-      .prepare(
-        `SELECT COALESCE(SUM(outstanding_amount), 0) AS total
+      .get()).c
+    const outstanding = (
+      await db
+        .prepare(
+          `SELECT COALESCE(SUM(outstanding_amount), 0) AS total
          FROM contribution_followups WHERE status IN ('open', 'in_progress')`,
-      )
-      .get().total
+        )
+        .get()
+    ).total
     finance = { collected, pending, outstanding }
   } catch {
     finance = null
@@ -104,10 +108,10 @@ router.get('/summary', authMiddleware, (req, res) => {
   })
 })
 
-router.get('/activity', authMiddleware, (req, res) => {
+router.get('/activity', authMiddleware, async (req, res) => {
   const requested = Number(req.query.limit)
   const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 100) : 12
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT action, meta_json, created_at FROM audit_log ORDER BY created_at DESC LIMIT ?`,
     )
