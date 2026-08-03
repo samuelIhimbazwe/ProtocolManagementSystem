@@ -138,7 +138,13 @@ router.post('/sessions/:sessionId/submit', authMiddleware, (req, res) => {
   db.prepare(
     `UPDATE attendance_sessions SET status = 'submitted', submitted_at = datetime('now'), submitted_by_user_id = ? WHERE id = ?`,
   ).run(req.auth.sub, session.id)
-  audit('attendance.submit', req.auth.sub, { sessionId: session.id, serviceId: session.service_id })
+  audit('attendance.submit', req.auth.sub, {
+    sessionId: session.id,
+    serviceId: session.service_id,
+    serviceName: session.service_name,
+    serviceDate: session.service_date,
+    summary: `Attendance submitted for ${session.service_name}`,
+  })
 
   return res.json({ ok: true, session: mapSession(db.prepare(`SELECT * FROM attendance_sessions WHERE id = ?`).get(session.id)) })
 })
