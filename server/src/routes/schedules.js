@@ -9,12 +9,12 @@ const router = Router()
 
 const EDIT_ROLES = new Set(['coordinator', 'secretary'])
 
-function getDraft() {
-  return db.prepare(`SELECT * FROM schedule_versions WHERE status = 'draft' LIMIT 1`).get()
+async function getDraft() {
+  return await db.prepare(`SELECT * FROM schedule_versions WHERE status = 'draft' LIMIT 1`).get()
 }
 
-function getLatestPublished() {
-  return db
+async function getLatestPublished() {
+  return await db
     .prepare(
       `SELECT * FROM schedule_versions WHERE status = 'published' ORDER BY published_at DESC LIMIT 1`,
     )
@@ -25,18 +25,18 @@ function parsePayload(row) {
   return JSON.parse(row.payload_json)
 }
 
-function attachValidation(payload) {
-  const rules = loadRulesFromDb()
+async function attachValidation(payload) {
+  const rules = await loadRulesFromDb()
   const { rows, summary } = validateSchedulePayload(payload, rules)
   return { ...payload, validationRows: rows, validationSummary: summary }
 }
 
-router.get('/current', authMiddleware, (req, res) => {
+router.get('/current', authMiddleware, async (req, res) => {
   const canEdit = EDIT_ROLES.has(req.auth.role)
   if (canEdit) {
-    const draft = getDraft()
+    const draft = await getDraft()
     if (!draft) return res.status(404).json({ error: 'No draft schedule' })
-    const payload = attachValidation(parsePayload(draft))
+    const payload = await attachValidation(parsePayload(draft))
     return res.json({
       source: 'draft',
       editable: true,
@@ -47,7 +47,7 @@ router.get('/current', authMiddleware, (req, res) => {
     })
   }
 
-  const published = getLatestPublished()
+  const published = await getLatestPublished()
   if (published) {
     return res.json({
       source: 'published',
@@ -60,7 +60,7 @@ router.get('/current', authMiddleware, (req, res) => {
     })
   }
 
-  const draft = getDraft()
+  const draft = await getDraft()
   if (!draft) return res.status(404).json({ error: 'No schedule' })
   return res.json({
     source: 'draft',
@@ -72,12 +72,12 @@ router.get('/current', authMiddleware, (req, res) => {
   })
 })
 
-router.get('/draft', authMiddleware, (req, res) => {
-  const draft = getDraft()
+router.get('/draft', authMiddleware, async (req, res) => {
+  const draft = await getDraft()
   if (!draft) {
     return res.status(404).json({ error: 'No draft schedule' })
   }
-  const payload = attachValidation(parsePayload(draft))
+  const payload = await attachValidation(parsePayload(draft))
   return res.json({
     id: draft.id,
     versionLabel: draft.version_label,
@@ -86,12 +86,12 @@ router.get('/draft', authMiddleware, (req, res) => {
   })
 })
 
-router.put('/draft', authMiddleware, (req, res) => {
+router.put('/draft', authMiddleware, async (req, res) => {
   if (!EDIT_ROLES.has(req.auth.role)) {
     return res.status(403).json({ error: 'Forbidden' })
   }
 
-  const draft = getDraft()
+  const draft = await getDraft()
   if (!draft) {
     return res.status(404).json({ error: 'No draft schedule' })
   }
@@ -101,16 +101,16 @@ router.put('/draft', authMiddleware, (req, res) => {
     return res.status(400).json({ error: 'payload object required' })
   }
 
-  const validated = attachValidation(payload)
+  const validated = await attachValidation(payload)
   const previous = parsePayload(draft)
-  db.prepare(`UPDATE schedule_versions SET payload_json = ? WHERE id = ?`).run(JSON.stringify(validated), draft.id)
+  await db.prepare(`UPDATE schedule_versions SET payload_json = ? WHERE id = ?`).run(JSON.stringify(validated), draft.id)
 
   const monthLabel = validated.monthLabel || previous.monthLabel || draft.month_key
   const monthKey = validated.monthKey || draft.month_key
   const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
   if (!same(previous.teamAssignments, validated.teamAssignments)) {
-    audit('schedule.team_assignments', req.auth.sub, {
+    await audit('schedule.team_assignments', req.auth.sub, {
       monthKey,
       monthLabel,
       teams: validated.teamAssignments?.length ?? 0,
@@ -118,7 +118,7 @@ router.put('/draft', authMiddleware, (req, res) => {
     })
   }
   if (!same(previous.choirAssignments, validated.choirAssignments)) {
-    audit('schedule.choir_assignments', req.auth.sub, {
+    await audit('schedule.choir_assignments', req.auth.sub, {
       monthKey,
       monthLabel,
       choirs: validated.choirAssignments?.length ?? 0,
@@ -129,7 +129,7 @@ router.put('/draft', authMiddleware, (req, res) => {
     const nextLead = validated.leadershipReview ?? []
     const approved =
       nextLead.length > 0 && nextLead.every((r) => /approv/i.test(String(r.status ?? '')))
-    audit(approved ? 'schedule.leadership_approved' : 'schedule.leadership_updated', req.auth.sub, {
+    await audit(approved ? 'schedule.leadership_approved' : 'schedule.leadership_updated', req.auth.sub, {
       monthKey,
       monthLabel,
       summary: approved
@@ -138,31 +138,31 @@ router.put('/draft', authMiddleware, (req, res) => {
     })
   }
 
-  audit('schedule.draft_update', req.auth.sub, { draftId: draft.id })
+  await audit('schedule.draft_update', req.auth.sub, { draftId: draft.id })
 
   return res.json({ ok: true, payload: validated })
 })
 
-router.get('/validate', authMiddleware, (req, res) => {
-  const draft = getDraft()
+router.get('/validate', authMiddleware, async (req, res) => {
+  const draft = await getDraft()
   if (!draft) return res.status(404).json({ error: 'No draft schedule' })
   const payload = parsePayload(draft)
-  const rules = loadRulesFromDb()
+  const rules = await loadRulesFromDb()
   const result = validateSchedulePayload(payload, rules)
   return res.json(result)
 })
 
-router.post('/publish', authMiddleware, (req, res) => {
+router.post('/publish', authMiddleware, async (req, res) => {
   if (req.auth.role !== 'coordinator') {
     return res.status(403).json({ error: 'Only coordinator can publish' })
   }
 
-  const draft = getDraft()
+  const draft = await getDraft()
   if (!draft) {
     return res.status(404).json({ error: 'No draft schedule' })
   }
 
-  const rules = loadRulesFromDb()
+  const rules = await loadRulesFromDb()
   const payload = parsePayload(draft)
   const validation = validateSchedulePayload(payload, rules)
   if (publishBlocked(validation.summary, rules)) {
@@ -174,7 +174,7 @@ router.post('/publish', authMiddleware, (req, res) => {
   }
 
   const publishedCount =
-    db.prepare(`SELECT COUNT(*) AS c FROM schedule_versions WHERE status = 'published'`).get().c + 1
+    (await db.prepare(`SELECT COUNT(*) AS c FROM schedule_versions WHERE status = 'published'`).get()).c + 1
   const versionLabel = `V${publishedCount}`
 
   const publishId = uuid()
@@ -183,14 +183,14 @@ router.post('/publish', authMiddleware, (req, res) => {
   payload.validationSummary = validation.summary
   payload.validationRows = validation.rows
 
-  const publisher = db.prepare(`SELECT display_name FROM users WHERE id = ?`).get(req.auth.sub)
+  const publisher = await db.prepare(`SELECT display_name FROM users WHERE id = ?`).get(req.auth.sub)
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO schedule_versions (id, version_label, status, month_key, payload_json, published_at, published_by_user_id)
      VALUES (?, ?, 'published', ?, ?, datetime('now'), ?)`,
   ).run(publishId, versionLabel, draft.month_key, JSON.stringify(payload), req.auth.sub)
 
-  audit('schedule.publish', req.auth.sub, {
+  await audit('schedule.publish', req.auth.sub, {
     versionLabel,
     monthKey: draft.month_key,
     monthLabel: payload.monthLabel || draft.month_key,
@@ -205,8 +205,8 @@ router.post('/publish', authMiddleware, (req, res) => {
   })
 })
 
-router.get('/published/latest', authMiddleware, (req, res) => {
-  const row = getLatestPublished()
+router.get('/published/latest', authMiddleware, async (req, res) => {
+  const row = await getLatestPublished()
   if (!row) {
     return res.json({ published: null })
   }
@@ -221,8 +221,8 @@ router.get('/published/latest', authMiddleware, (req, res) => {
   })
 })
 
-router.get('/history', authMiddleware, (req, res) => {
-  const rows = db
+router.get('/history', authMiddleware, async (req, res) => {
+  const rows = await db
     .prepare(
       `SELECT sv.id, sv.version_label, sv.month_key, sv.published_at, sv.published_by_user_id, u.display_name
        FROM schedule_versions sv
