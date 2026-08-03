@@ -4,15 +4,12 @@
   "description": "Protocol Management & Scheduling System — unified app",
   "scripts": {
     "install:all": "npm install --prefix server && npm install --prefix prototype",
-    "build:ui": "npm run build --prefix prototype",
+    "build:ui": "npm install --prefix prototype && npm run build --prefix prototype",
     "build": "npm run build:ui",
     "seed": "npm run seed -- --force --prefix server",
     "start": "npm run build:ui && npm run start:prod --prefix server",
     "dev:api": "npm run dev --prefix server",
     "dev:ui": "npm run dev --prefix prototype",
     "dev": "echo Run dev:api and dev:ui in two terminals. See DEPLOYMENT.md"
-  },
-  "engines": {
-    "node": ">=22.14.0"
   }
 }
