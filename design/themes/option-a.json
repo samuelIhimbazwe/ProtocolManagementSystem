@@ -1,0 +1,33 @@
+{
+  "id": "a",
+  "label": "Option A — Ministry navy",
+  "description": "Navy primary CTAs, forest-green outline accents, cool gray surfaces. Saved baseline as of 2026-08-01.",
+  "font": "Plus Jakarta Sans",
+  "color": {
+    "pageBackground": "#F9FAFB",
+    "authBackground": "#F3F4F6",
+    "surface": "#FFFFFF",
+    "textPrimary": "#111827",
+    "primary": {
+      "50": "#EEF2F6",
+      "100": "#D9E4F0",
+      "200": "#BCCCDC",
+      "500": "#486581",
+      "600": "#243B53",
+      "700": "#1A2E42",
+      "800": "#102A43"
+    },
+    "accent": {
+      "50": "#F1F8F4",
+      "100": "#D8EDE0",
+      "600": "#2D6A4F",
+      "700": "#1B4332"
+    },
+    "link": { "default": "#2C5282", "hover": "#2A4365" },
+    "outlineAccent": { "border": "#2D6A4F", "text": "#1B4332" }
+  },
+  "radius": { "card": "12px", "auth": "16px", "input": "8px" },
+  "shadow": {
+    "auth": "0 10px 40px rgba(17, 24, 39, 0.08), 0 4px 12px rgba(17, 24, 39, 0.04)"
+  }
+}

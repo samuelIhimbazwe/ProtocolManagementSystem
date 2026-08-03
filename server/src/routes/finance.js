@@ -1,0 +1,822 @@
+import { Router } from 'express'
+import { v4 as uuid } from 'uuid'
+import { db, audit } from '../db.js'
+import { authMiddleware } from '../middleware/auth.js'
+
+const router = Router()
+
+const VIEW_ROLES = new Set([
+  'president',
+  'vice_president',
+  'secretary',
+  'treasurer',
+  'coordinator',
+  'member',
+])
+const MANAGE_TYPES = new Set(['treasurer', 'president', 'vice_president'])
+const EXTEND_DEADLINE = new Set(['treasurer', 'president', 'vice_president'])
+const MAKE_PUBLIC = new Set(['treasurer', 'president', 'vice_president'])
+const MANAGE_METHODS = new Set(['treasurer'])
+const VERIFY = new Set(['treasurer'])
+const VIEW_LEDGER = new Set([
+  'president',
+  'vice_president',
+  'secretary',
+  'treasurer',
+  'coordinator',
+])
+const VIEW_REPORTS = new Set([
+  'president',
+  'vice_president',
+  'secretary',
+  'treasurer',
+  'coordinator',
+])
+
+function forbid(res) {
+  res.status(403).json({ error: 'Forbidden' })
+  return false
+}
+
+function requireRole(req, res, set) {
+  if (!set.has(req.auth.role)) return forbid(res)
+  return true
+}
+
+function mapMethod(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    kind: row.kind,
+    label: row.label,
+    provider: row.provider,
+    accountName: row.account_name,
+    accountNumber: row.account_number,
+    instructions: row.instructions,
+    sortOrder: row.sort_order,
+    active: Boolean(row.active),
+  }
+}
+
+function mapType(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    category: row.category,
+    status: row.status,
+    frequency: row.frequency,
+    ministryGoal: row.ministry_goal ?? 0,
+    memberGoal: row.member_goal ?? 0,
+    memberGoalMode: row.member_goal_mode,
+    visibility: row.visibility,
+    startDate: row.start_date,
+    deadline: row.deadline,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapSubmission(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    contributionTypeId: row.contribution_type_id,
+    contributionName: row.contribution_name ?? row.name ?? null,
+    memberId: row.member_id,
+    memberName: row.member_name ?? null,
+    memberPhone: row.member_phone ?? null,
+    paymentDate: row.payment_date,
+    claimedAmount: row.claimed_amount ?? 0,
+    confirmedAmount: row.confirmed_amount,
+    paymentMethodId: row.payment_method_id,
+    paymentMethodLabel: row.payment_method_label ?? null,
+    evidenceNote: row.evidence_note,
+    status: row.status,
+    verificationNote: row.verification_note,
+    submittedAt: row.submitted_at,
+    confirmedAt: row.confirmed_at,
+    verifiedByUserId: row.verified_by_user_id,
+    verifiedByName: row.verified_by_name ?? null,
+    followUpStatus: row.followup_status ?? null,
+    followUpId: row.followup_id ?? null,
+    outstandingAmount: row.outstanding_amount ?? null,
+  }
+}
+
+function memberGoalFor(typeId, memberId, typeRow) {
+  if (typeRow.member_goal_mode === 'custom') {
+    const custom = db
+      .prepare(
+        `SELECT goal_amount FROM contribution_member_goals
+         WHERE contribution_type_id = ? AND member_id = ?`,
+      )
+      .get(typeId, memberId)
+    if (custom) return custom.goal_amount
+  }
+  return typeRow.member_goal ?? 0
+}
+
+function confirmedTotalForMember(typeId, memberId) {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(
+         CASE
+           WHEN status = 'confirmed' THEN COALESCE(confirmed_amount, claimed_amount)
+           WHEN status = 'partial' THEN COALESCE(confirmed_amount, 0)
+           ELSE 0
+         END
+       ), 0) AS total
+       FROM contribution_submissions
+       WHERE contribution_type_id = ? AND member_id = ?`,
+    )
+    .get(typeId, memberId)
+  return row?.total ?? 0
+}
+
+function ministryCollected(typeId) {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(
+         CASE
+           WHEN status = 'confirmed' THEN COALESCE(confirmed_amount, claimed_amount)
+           WHEN status = 'partial' THEN COALESCE(confirmed_amount, 0)
+           ELSE 0
+         END
+       ), 0) AS total
+       FROM contribution_submissions
+       WHERE contribution_type_id = ?`,
+    )
+    .get(typeId)
+  return row?.total ?? 0
+}
+
+function ensureFollowUp(submissionId, outstanding, note, actorId) {
+  let fu = db
+    .prepare(`SELECT * FROM contribution_followups WHERE submission_id = ?`)
+    .get(submissionId)
+  if (!fu) {
+    const id = uuid()
+    db.prepare(
+      `INSERT INTO contribution_followups (id, submission_id, outstanding_amount, status)
+       VALUES (?, ?, ?, 'open')`,
+    ).run(id, submissionId, outstanding)
+    fu = db.prepare(`SELECT * FROM contribution_followups WHERE id = ?`).get(id)
+  } else {
+    db.prepare(
+      `UPDATE contribution_followups SET outstanding_amount = ?, status = 'open',
+       updated_at = datetime('now'), resolved_at = NULL WHERE id = ?`,
+    ).run(outstanding, fu.id)
+  }
+  if (note) {
+    db.prepare(
+      `INSERT INTO contribution_followup_notes (id, followup_id, author_user_id, body)
+       VALUES (?, ?, ?, ?)`,
+    ).run(uuid(), fu.id, actorId ?? null, note)
+  }
+  return fu.id
+}
+
+/** GET /finance/summary — role-aware home widgets */
+router.get('/summary', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VIEW_ROLES)) return
+
+  const pending = db
+    .prepare(`SELECT COUNT(*) AS c FROM contribution_submissions WHERE status = 'pending'`)
+    .get().c
+  const activeTypes = db
+    .prepare(`SELECT COUNT(*) AS c FROM contribution_types WHERE status = 'Active'`)
+    .get().c
+  const collected = db
+    .prepare(
+      `SELECT COALESCE(SUM(
+         CASE
+           WHEN status = 'confirmed' THEN COALESCE(confirmed_amount, claimed_amount)
+           WHEN status = 'partial' THEN COALESCE(confirmed_amount, 0)
+           ELSE 0
+         END
+       ), 0) AS total FROM contribution_submissions`,
+    )
+    .get().total
+  const outstanding = db
+    .prepare(
+      `SELECT COALESCE(SUM(outstanding_amount), 0) AS total
+       FROM contribution_followups WHERE status IN ('open', 'in_progress')`,
+    )
+    .get().total
+
+  const types = db
+    .prepare(`SELECT * FROM contribution_types WHERE status = 'Active' ORDER BY name`)
+    .all()
+    .map(mapType)
+
+  let memberProgress = null
+  if (req.auth.role === 'member' && req.auth.memberId) {
+    const mid = req.auth.memberId
+    memberProgress = types
+      .filter((t) => t.visibility === 'public' || true)
+      .map((t) => {
+        const row = db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(t.id)
+        const goal = memberGoalFor(t.id, mid, row)
+        const paid = confirmedTotalForMember(t.id, mid)
+        const remaining = Math.max(0, goal - paid)
+        return {
+          ...t,
+          memberGoal: goal,
+          paid,
+          remaining,
+          progressPct: goal > 0 ? Math.min(100, Math.round((paid / goal) * 100)) : 0,
+        }
+      })
+  }
+
+  const publicGoals = types
+    .filter((t) => t.visibility === 'public')
+    .map((t) => {
+      const collectedAmt = ministryCollected(t.id)
+      return {
+        ...t,
+        collected: collectedAmt,
+        progressPct:
+          t.ministryGoal > 0 ? Math.min(100, Math.round((collectedAmt / t.ministryGoal) * 100)) : 0,
+      }
+    })
+
+  const leadership =
+    req.auth.role !== 'member'
+      ? {
+          totalCollected: collected,
+          pendingVerification: pending,
+          outstandingBalances: outstanding,
+          activeTypes,
+          goalAchievement: (() => {
+            const goals = types.reduce((s, t) => s + (t.ministryGoal || 0), 0)
+            return goals > 0 ? Math.round((collected / goals) * 100) : null
+          })(),
+        }
+      : null
+
+  return res.json({
+    leadership,
+    memberProgress,
+    publicGoals,
+    methods: db
+      .prepare(`SELECT * FROM payment_methods WHERE active = 1 ORDER BY sort_order, label`)
+      .all()
+      .map(mapMethod),
+  })
+})
+
+/** Payment methods */
+router.get('/methods', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VIEW_ROLES)) return
+  const all = req.auth.role === 'treasurer'
+  const rows = all
+    ? db.prepare(`SELECT * FROM payment_methods ORDER BY sort_order, label`).all()
+    : db.prepare(`SELECT * FROM payment_methods WHERE active = 1 ORDER BY sort_order, label`).all()
+  return res.json({ methods: rows.map(mapMethod) })
+})
+
+router.post('/methods', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, MANAGE_METHODS)) return
+  const { kind, label, provider, accountName, accountNumber, instructions, sortOrder } = req.body ?? {}
+  if (!kind || !label?.trim()) return res.status(400).json({ error: 'kind and label required' })
+  const id = uuid()
+  db.prepare(
+    `INSERT INTO payment_methods
+     (id, kind, label, provider, account_name, account_number, instructions, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    kind,
+    label.trim(),
+    provider ?? null,
+    accountName ?? null,
+    accountNumber ?? null,
+    instructions ?? null,
+    Number(sortOrder) || 0,
+  )
+  audit('finance.method.create', req.auth.sub, { id, label })
+  return res.status(201).json({ method: mapMethod(db.prepare(`SELECT * FROM payment_methods WHERE id = ?`).get(id)) })
+})
+
+router.put('/methods/:id', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, MANAGE_METHODS)) return
+  const existing = db.prepare(`SELECT * FROM payment_methods WHERE id = ?`).get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Not found' })
+  const b = req.body ?? {}
+  db.prepare(
+    `UPDATE payment_methods SET
+      kind = ?, label = ?, provider = ?, account_name = ?, account_number = ?,
+      instructions = ?, sort_order = ?, active = ?, updated_at = datetime('now')
+     WHERE id = ?`,
+  ).run(
+    b.kind ?? existing.kind,
+    (b.label ?? existing.label).trim(),
+    b.provider !== undefined ? b.provider : existing.provider,
+    b.accountName !== undefined ? b.accountName : existing.account_name,
+    b.accountNumber !== undefined ? b.accountNumber : existing.account_number,
+    b.instructions !== undefined ? b.instructions : existing.instructions,
+    b.sortOrder !== undefined ? Number(b.sortOrder) : existing.sort_order,
+    b.active !== undefined ? (b.active ? 1 : 0) : existing.active,
+    req.params.id,
+  )
+  audit('finance.method.update', req.auth.sub, { id: req.params.id })
+  return res.json({ method: mapMethod(db.prepare(`SELECT * FROM payment_methods WHERE id = ?`).get(req.params.id)) })
+})
+
+router.delete('/methods/:id', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, MANAGE_METHODS)) return
+  db.prepare(`UPDATE payment_methods SET active = 0, updated_at = datetime('now') WHERE id = ?`).run(
+    req.params.id,
+  )
+  audit('finance.method.deactivate', req.auth.sub, { id: req.params.id })
+  return res.json({ ok: true })
+})
+
+/** Contribution types */
+router.get('/types', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VIEW_ROLES)) return
+  let rows
+  if (req.auth.role === 'member') {
+    rows = db
+      .prepare(
+        `SELECT * FROM contribution_types
+         WHERE status = 'Active' AND (visibility = 'public' OR visibility = 'private')
+         ORDER BY name`,
+      )
+      .all()
+    // Members see private types for payment obligation, but ministry totals only if public
+  } else {
+    rows = db.prepare(`SELECT * FROM contribution_types ORDER BY status, name`).all()
+  }
+  const types = rows.map((r) => {
+    const t = mapType(r)
+    const collected = ministryCollected(r.id)
+    return {
+      ...t,
+      collected,
+      progressPct: t.ministryGoal > 0 ? Math.min(100, Math.round((collected / t.ministryGoal) * 100)) : 0,
+      showMinistryGoal: t.visibility === 'public' || req.auth.role !== 'member',
+    }
+  })
+  return res.json({ types })
+})
+
+router.post('/types', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, MANAGE_TYPES)) return
+  const b = req.body ?? {}
+  if (!b.name?.trim()) return res.status(400).json({ error: 'name required' })
+  if (!b.deadline && b.frequency !== 'continuous') {
+    return res.status(400).json({ error: 'deadline required unless continuous' })
+  }
+  const id = uuid()
+  db.prepare(
+    `INSERT INTO contribution_types
+     (id, name, description, category, status, frequency, ministry_goal, member_goal,
+      member_goal_mode, visibility, start_date, deadline, created_by_user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    b.name.trim(),
+    b.description ?? null,
+    b.category ?? 'General',
+    b.status ?? 'Active',
+    b.frequency ?? 'one_time',
+    Number(b.ministryGoal) || 0,
+    Number(b.memberGoal) || 0,
+    b.memberGoalMode ?? 'uniform',
+    b.visibility ?? 'private',
+    b.startDate ?? null,
+    b.deadline ?? null,
+    req.auth.sub,
+  )
+  if (Array.isArray(b.memberGoals)) {
+    const ins = db.prepare(
+      `INSERT OR REPLACE INTO contribution_member_goals (contribution_type_id, member_id, goal_amount)
+       VALUES (?, ?, ?)`,
+    )
+    for (const g of b.memberGoals) {
+      if (g.memberId) ins.run(id, g.memberId, Number(g.goalAmount) || 0)
+    }
+  }
+  audit('finance.type.create', req.auth.sub, { id, name: b.name })
+  return res.status(201).json({ type: mapType(db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(id)) })
+})
+
+router.put('/types/:id', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, MANAGE_TYPES)) return
+  const existing = db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Not found' })
+  const b = req.body ?? {}
+
+  if (b.visibility === 'public' && !MAKE_PUBLIC.has(req.auth.role)) {
+    return forbid(res)
+  }
+  if (b.deadline && b.deadline !== existing.deadline && !EXTEND_DEADLINE.has(req.auth.role)) {
+    return forbid(res)
+  }
+
+  db.prepare(
+    `UPDATE contribution_types SET
+      name = ?, description = ?, category = ?, status = ?, frequency = ?,
+      ministry_goal = ?, member_goal = ?, member_goal_mode = ?, visibility = ?,
+      start_date = ?, deadline = ?, updated_at = datetime('now')
+     WHERE id = ?`,
+  ).run(
+    (b.name ?? existing.name).trim(),
+    b.description !== undefined ? b.description : existing.description,
+    b.category ?? existing.category,
+    b.status ?? existing.status,
+    b.frequency ?? existing.frequency,
+    b.ministryGoal !== undefined ? Number(b.ministryGoal) : existing.ministry_goal,
+    b.memberGoal !== undefined ? Number(b.memberGoal) : existing.member_goal,
+    b.memberGoalMode ?? existing.member_goal_mode,
+    b.visibility ?? existing.visibility,
+    b.startDate !== undefined ? b.startDate : existing.start_date,
+    b.deadline !== undefined ? b.deadline : existing.deadline,
+    req.params.id,
+  )
+  audit('finance.type.update', req.auth.sub, { id: req.params.id })
+  return res.json({
+    type: mapType(db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(req.params.id)),
+  })
+})
+
+router.delete('/types/:id', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, new Set(['treasurer']))) return
+  const existing = db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Not found' })
+  db.prepare(`UPDATE contribution_types SET status = 'Closed', updated_at = datetime('now') WHERE id = ?`).run(
+    req.params.id,
+  )
+  audit('finance.type.close', req.auth.sub, { id: req.params.id })
+  return res.json({ ok: true })
+})
+
+/** Submissions */
+router.get('/submissions', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VIEW_ROLES)) return
+  const { status, typeId, memberId } = req.query
+  const clauses = []
+  const params = []
+
+  if (req.auth.role === 'member') {
+    clauses.push('s.member_id = ?')
+    params.push(req.auth.memberId)
+  } else if (!VIEW_LEDGER.has(req.auth.role)) {
+    return forbid(res)
+  } else if (memberId) {
+    clauses.push('s.member_id = ?')
+    params.push(String(memberId))
+  }
+
+  if (status) {
+    clauses.push('s.status = ?')
+    params.push(String(status))
+  }
+  if (typeId) {
+    clauses.push('s.contribution_type_id = ?')
+    params.push(String(typeId))
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+  const rows = db
+    .prepare(
+      `SELECT s.*, t.name AS contribution_name, m.name AS member_name, m.phone AS member_phone,
+        pm.label AS payment_method_label, u.display_name AS verified_by_name,
+        f.status AS followup_status, f.id AS followup_id, f.outstanding_amount
+       FROM contribution_submissions s
+       JOIN contribution_types t ON t.id = s.contribution_type_id
+       JOIN members m ON m.id = s.member_id
+       LEFT JOIN payment_methods pm ON pm.id = s.payment_method_id
+       LEFT JOIN users u ON u.id = s.verified_by_user_id
+       LEFT JOIN contribution_followups f ON f.submission_id = s.id
+       ${where}
+       ORDER BY s.submitted_at DESC
+       LIMIT 200`,
+    )
+    .all(...params)
+    .map(mapSubmission)
+
+  const claimedTotal = rows.reduce((s, r) => s + (r.claimedAmount || 0), 0)
+  const confirmedTotal = rows.reduce((s, r) => {
+    if (r.status === 'confirmed') return s + (r.confirmedAmount ?? r.claimedAmount ?? 0)
+    if (r.status === 'partial') return s + (r.confirmedAmount ?? 0)
+    return s
+  }, 0)
+
+  return res.json({
+    submissions: rows,
+    totals: {
+      claimedTotal,
+      confirmedTotal,
+      difference: claimedTotal - confirmedTotal,
+    },
+  })
+})
+
+router.post('/submissions', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VIEW_ROLES)) return
+  const b = req.body ?? {}
+  const memberId = req.auth.role === 'member' ? req.auth.memberId : b.memberId
+  if (!memberId) return res.status(400).json({ error: 'memberId required' })
+  if (!b.contributionTypeId || !b.paymentDate || b.claimedAmount == null) {
+    return res.status(400).json({ error: 'contributionTypeId, paymentDate, claimedAmount required' })
+  }
+  const type = db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(b.contributionTypeId)
+  if (!type || type.status !== 'Active') return res.status(400).json({ error: 'Invalid contribution type' })
+
+  const claimed = Math.round(Number(b.claimedAmount))
+  if (!Number.isFinite(claimed) || claimed <= 0) return res.status(400).json({ error: 'Invalid amount' })
+
+  const id = uuid()
+  db.prepare(
+    `INSERT INTO contribution_submissions
+     (id, contribution_type_id, member_id, payment_date, claimed_amount, payment_method_id,
+      evidence_note, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+  ).run(
+    id,
+    b.contributionTypeId,
+    memberId,
+    b.paymentDate,
+    claimed,
+    b.paymentMethodId ?? null,
+    b.evidenceNote ?? null,
+  )
+  audit('finance.submission.create', req.auth.sub, { id, memberId, claimed })
+  const row = db
+    .prepare(
+      `SELECT s.*, t.name AS contribution_name, m.name AS member_name, m.phone AS member_phone
+       FROM contribution_submissions s
+       JOIN contribution_types t ON t.id = s.contribution_type_id
+       JOIN members m ON m.id = s.member_id
+       WHERE s.id = ?`,
+    )
+    .get(id)
+  return res.status(201).json({ submission: mapSubmission(row) })
+})
+
+router.post('/submissions/:id/verify', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VERIFY)) return
+  const sub = db.prepare(`SELECT * FROM contribution_submissions WHERE id = ?`).get(req.params.id)
+  if (!sub) return res.status(404).json({ error: 'Not found' })
+  if (sub.status !== 'pending' && sub.status !== 'partial') {
+    return res.status(400).json({ error: 'Only pending or partial submissions can be verified' })
+  }
+
+  const { action, receivedAmount, note } = req.body ?? {}
+  if (!['confirm', 'partial', 'decline'].includes(action)) {
+    return res.status(400).json({ error: 'action must be confirm, partial, or decline' })
+  }
+
+  if (action === 'confirm') {
+    db.prepare(
+      `UPDATE contribution_submissions SET
+        status = 'confirmed', confirmed_amount = ?, verification_note = ?,
+        confirmed_at = datetime('now'), verified_by_user_id = ?
+       WHERE id = ?`,
+    ).run(sub.claimed_amount, note ?? null, req.auth.sub, sub.id)
+    const fu = db.prepare(`SELECT id FROM contribution_followups WHERE submission_id = ?`).get(sub.id)
+    if (fu) {
+      db.prepare(
+        `UPDATE contribution_followups SET status = 'resolved', outstanding_amount = 0,
+         updated_at = datetime('now'), resolved_at = datetime('now') WHERE id = ?`,
+      ).run(fu.id)
+    }
+  } else if (action === 'partial') {
+    const received = Math.round(Number(receivedAmount))
+    if (!Number.isFinite(received) || received < 0) {
+      return res.status(400).json({ error: 'receivedAmount required' })
+    }
+    if (!note?.trim()) return res.status(400).json({ error: 'explanation note required' })
+    const outstanding = Math.max(0, sub.claimed_amount - received)
+    db.prepare(
+      `UPDATE contribution_submissions SET
+        status = 'partial', confirmed_amount = ?, verification_note = ?,
+        confirmed_at = datetime('now'), verified_by_user_id = ?
+       WHERE id = ?`,
+    ).run(received, note.trim(), req.auth.sub, sub.id)
+    ensureFollowUp(sub.id, outstanding, note.trim(), req.auth.sub)
+  } else {
+    if (!note?.trim()) return res.status(400).json({ error: 'note required when declining' })
+    db.prepare(
+      `UPDATE contribution_submissions SET
+        status = 'declined', confirmed_amount = 0, verification_note = ?,
+        confirmed_at = datetime('now'), verified_by_user_id = ?
+       WHERE id = ?`,
+    ).run(note.trim(), req.auth.sub, sub.id)
+    ensureFollowUp(sub.id, sub.claimed_amount, note.trim(), req.auth.sub)
+  }
+
+  audit('finance.submission.verify', req.auth.sub, { id: sub.id, action })
+  const row = db
+    .prepare(
+      `SELECT s.*, t.name AS contribution_name, m.name AS member_name, m.phone AS member_phone,
+        f.status AS followup_status, f.id AS followup_id, f.outstanding_amount
+       FROM contribution_submissions s
+       JOIN contribution_types t ON t.id = s.contribution_type_id
+       JOIN members m ON m.id = s.member_id
+       LEFT JOIN contribution_followups f ON f.submission_id = s.id
+       WHERE s.id = ?`,
+    )
+    .get(sub.id)
+  return res.json({ submission: mapSubmission(row) })
+})
+
+/** Follow-ups */
+router.get('/followups', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VIEW_LEDGER)) return
+  const rows = db
+    .prepare(
+      `SELECT f.*, s.claimed_amount, s.confirmed_amount, s.status AS submission_status,
+        s.verification_note, m.name AS member_name, t.name AS contribution_name
+       FROM contribution_followups f
+       JOIN contribution_submissions s ON s.id = f.submission_id
+       JOIN members m ON m.id = s.member_id
+       JOIN contribution_types t ON t.id = s.contribution_type_id
+       ORDER BY f.updated_at DESC`,
+    )
+    .all()
+    .map((r) => ({
+      id: r.id,
+      submissionId: r.submission_id,
+      outstandingAmount: r.outstanding_amount,
+      status: r.status,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      resolvedAt: r.resolved_at,
+      memberName: r.member_name,
+      contributionName: r.contribution_name,
+      claimedAmount: r.claimed_amount,
+      confirmedAmount: r.confirmed_amount,
+      submissionStatus: r.submission_status,
+      verificationNote: r.verification_note,
+    }))
+  return res.json({ followups: rows })
+})
+
+router.get('/followups/:id', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VIEW_LEDGER)) return
+  const r = db
+    .prepare(
+      `SELECT f.*, m.name AS member_name, t.name AS contribution_name, s.verification_note
+       FROM contribution_followups f
+       JOIN contribution_submissions s ON s.id = f.submission_id
+       JOIN members m ON m.id = s.member_id
+       JOIN contribution_types t ON t.id = s.contribution_type_id
+       WHERE f.id = ?`,
+    )
+    .get(req.params.id)
+  if (!r) return res.status(404).json({ error: 'Not found' })
+  const notes = db
+    .prepare(
+      `SELECT n.*, u.display_name AS author_name FROM contribution_followup_notes n
+       LEFT JOIN users u ON u.id = n.author_user_id
+       WHERE n.followup_id = ? ORDER BY n.created_at`,
+    )
+    .all(req.params.id)
+    .map((n) => ({
+      id: n.id,
+      body: n.body,
+      authorName: n.author_name,
+      createdAt: n.created_at,
+    }))
+  return res.json({
+    followup: {
+      id: r.id,
+      submissionId: r.submission_id,
+      outstandingAmount: r.outstanding_amount,
+      status: r.status,
+      memberName: r.member_name,
+      contributionName: r.contribution_name,
+      verificationNote: r.verification_note,
+      notes,
+    },
+  })
+})
+
+router.patch('/followups/:id', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VERIFY)) return
+  const fu = db.prepare(`SELECT * FROM contribution_followups WHERE id = ?`).get(req.params.id)
+  if (!fu) return res.status(404).json({ error: 'Not found' })
+  const { status, note, outstandingAmount } = req.body ?? {}
+  const nextStatus = status ?? fu.status
+  db.prepare(
+    `UPDATE contribution_followups SET
+      status = ?,
+      outstanding_amount = ?,
+      updated_at = datetime('now'),
+      resolved_at = CASE WHEN ? IN ('resolved', 'closed') THEN datetime('now') ELSE resolved_at END
+     WHERE id = ?`,
+  ).run(
+    nextStatus,
+    outstandingAmount !== undefined ? Number(outstandingAmount) : fu.outstanding_amount,
+    nextStatus,
+    req.params.id,
+  )
+  if (note?.trim()) {
+    db.prepare(
+      `INSERT INTO contribution_followup_notes (id, followup_id, author_user_id, body)
+       VALUES (?, ?, ?, ?)`,
+    ).run(uuid(), req.params.id, req.auth.sub, note.trim())
+  }
+  audit('finance.followup.update', req.auth.sub, { id: req.params.id, status: nextStatus })
+  return res.json({ ok: true })
+})
+
+/** Reports */
+router.get('/reports', authMiddleware, (req, res) => {
+  if (!requireRole(req, res, VIEW_REPORTS)) return
+  const byType = db
+    .prepare(
+      `SELECT t.id, t.name, t.ministry_goal,
+        COALESCE(SUM(CASE WHEN s.status = 'confirmed' THEN COALESCE(s.confirmed_amount, s.claimed_amount)
+                          WHEN s.status = 'partial' THEN COALESCE(s.confirmed_amount, 0) ELSE 0 END), 0) AS collected,
+        COALESCE(SUM(s.claimed_amount), 0) AS claimed
+       FROM contribution_types t
+       LEFT JOIN contribution_submissions s ON s.contribution_type_id = t.id
+       GROUP BY t.id
+       ORDER BY t.name`,
+    )
+    .all()
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      ministryGoal: r.ministry_goal,
+      collected: r.collected,
+      claimed: r.claimed,
+      progressPct:
+        r.ministry_goal > 0 ? Math.min(100, Math.round((r.collected / r.ministry_goal) * 100)) : null,
+    }))
+
+  const byMember = db
+    .prepare(
+      `SELECT m.id, m.name, m.phone,
+        COALESCE(SUM(CASE WHEN s.status = 'confirmed' THEN COALESCE(s.confirmed_amount, s.claimed_amount)
+                          WHEN s.status = 'partial' THEN COALESCE(s.confirmed_amount, 0) ELSE 0 END), 0) AS paid,
+        COALESCE(SUM(s.claimed_amount), 0) AS claimed
+       FROM members m
+       LEFT JOIN contribution_submissions s ON s.member_id = m.id
+       WHERE m.role = 'Member' AND m.status = 'Active'
+       GROUP BY m.id
+       ORDER BY paid DESC, m.name`,
+    )
+    .all()
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      phone: r.phone,
+      paid: r.paid,
+      claimed: r.claimed,
+    }))
+
+  const outstanding = db
+    .prepare(
+      `SELECT f.outstanding_amount, f.status, m.name AS member_name, t.name AS contribution_name,
+        s.status AS submission_status
+       FROM contribution_followups f
+       JOIN contribution_submissions s ON s.id = f.submission_id
+       JOIN members m ON m.id = s.member_id
+       JOIN contribution_types t ON t.id = s.contribution_type_id
+       WHERE f.status IN ('open', 'in_progress')
+       ORDER BY f.outstanding_amount DESC`,
+    )
+    .all()
+
+  const partials = db
+    .prepare(
+      `SELECT s.*, m.name AS member_name, t.name AS contribution_name
+       FROM contribution_submissions s
+       JOIN members m ON m.id = s.member_id
+       JOIN contribution_types t ON t.id = s.contribution_type_id
+       WHERE s.status = 'partial'
+       ORDER BY s.confirmed_at DESC`,
+    )
+    .all()
+    .map(mapSubmission)
+
+  const declined = db
+    .prepare(
+      `SELECT s.*, m.name AS member_name, t.name AS contribution_name
+       FROM contribution_submissions s
+       JOIN members m ON m.id = s.member_id
+       JOIN contribution_types t ON t.id = s.contribution_type_id
+       WHERE s.status = 'declined'
+       ORDER BY s.confirmed_at DESC`,
+    )
+    .all()
+    .map(mapSubmission)
+
+  return res.json({
+    collection: byType,
+    members: byMember,
+    outstanding,
+    partials,
+    declined,
+  })
+})
+
+export default router

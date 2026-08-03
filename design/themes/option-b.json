@@ -1,0 +1,51 @@
+{
+  "id": "b",
+  "label": "Option B — Flower cream & gold",
+  "description": "Runethia-inspired: warm cream field, display script titles, wide-tracked sans labels, pill CTAs, soft gold accents and organic radial light (not a commercial script font).",
+  "font": {
+    "sans": "Jost",
+    "display": "Pinyon Script"
+  },
+  "color": {
+    "pageBackground": "#F7F7F5",
+    "authBackground": "#F7F7F5",
+    "surface": "#FFFFFF",
+    "textPrimary": "#000000",
+    "borderSoft": "#DEDBD2",
+    "gold": "#C4A035",
+    "goldLight": "#D9BC5C",
+    "primary": {
+      "50": "#FAF8F4",
+      "100": "#F0EDE6",
+      "200": "#DEDBD2",
+      "500": "#8C7B6B",
+      "600": "#1A1A1A",
+      "700": "#000000",
+      "800": "#000000"
+    },
+    "accent": {
+      "50": "#FBF6E3",
+      "100": "#F5EAC4",
+      "600": "#8C7B6B",
+      "700": "#5C5046"
+    },
+    "link": { "default": "#8C7B6B", "hover": "#5C5046" },
+    "outlineAccent": { "border": "#C4A035", "text": "#5C5046" }
+  },
+  "shape": {
+    "cardRadius": "22px",
+    "authRadius": "28px",
+    "inputRadius": "14px",
+    "buttonShape": "pill"
+  },
+  "typography": {
+    "displayUsage": "Page titles, brand wordmark, section h2/h3",
+    "labelStyle": "uppercase, 0.16–0.26em letter-spacing",
+    "primaryButton": "uppercase, ~0.2em tracking, pill"
+  },
+  "radius": { "card": "22px", "auth": "28px", "input": "14px" },
+  "shadow": {
+    "auth": "0 12px 48px rgba(140, 123, 107, 0.1), 0 4px 16px rgba(0, 0, 0, 0.04)",
+    "card": "0 2px 20px rgba(140, 123, 107, 0.08)"
+  }
+}

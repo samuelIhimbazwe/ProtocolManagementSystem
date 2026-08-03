@@ -1,0 +1,81 @@
+/* Option A — Ministry navy (default baseline) */
+:root,
+[data-theme='a'] {
+  --pmss-font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --pmss-font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+
+  --pmss-radius-card: 12px;
+  --pmss-radius-auth: 16px;
+  --pmss-radius-input: 8px;
+  --pmss-radius-button: 8px;
+
+  --pmss-bg-page: #f4f6f8;
+  --pmss-bg-auth: #eef1f4;
+  --pmss-border-soft: #e2e8f0;
+
+  --pmss-primary-50: #eef2f6;
+  --pmss-primary-100: #d9e4f0;
+  --pmss-primary-200: #bcccdc;
+  --pmss-primary-500: #486581;
+  --pmss-primary-600: #243b53;
+  --pmss-primary-700: #1a2e42;
+  --pmss-primary-800: #102a43;
+
+  --pmss-accent-50: #f1f8f4;
+  --pmss-accent-100: #d8ede0;
+  --pmss-accent-600: #2d6a4f;
+  --pmss-accent-700: #1b4332;
+
+  --pmss-link: #2c5282;
+  --pmss-link-hover: #2a4365;
+
+  --pmss-outline-accent-border: #2d6a4f;
+  --pmss-outline-accent-text: #1b4332;
+  --pmss-outline-accent-hover: #f1f8f4;
+
+  --pmss-shadow-auth: 0 10px 40px rgba(17, 24, 39, 0.08), 0 4px 12px rgba(17, 24, 39, 0.04);
+  --pmss-shadow-card: 0 1px 3px rgba(17, 24, 39, 0.06), 0 1px 2px rgba(17, 24, 39, 0.04);
+  --pmss-focus-ring: rgb(36 59 83 / 0.25);
+}
+
+/* Option B — Flower-inspired cream, gold, taupe */
+[data-theme='b'] {
+  --pmss-font-sans: 'Jost', system-ui, sans-serif;
+  --pmss-font-display: 'Pinyon Script', 'Segoe Script', cursive;
+
+  --pmss-radius-card: 22px;
+  --pmss-radius-auth: 28px;
+  --pmss-radius-input: 14px;
+  --pmss-radius-button: 9999px;
+
+  --pmss-bg-page: #f7f7f5;
+  --pmss-bg-auth: #f7f7f5;
+  --pmss-border-soft: #dedbd2;
+
+  --pmss-primary-50: #faf8f4;
+  --pmss-primary-100: #f0ede6;
+  --pmss-primary-200: #dedbd2;
+  --pmss-primary-500: #8c7b6b;
+  --pmss-primary-600: #1a1a1a;
+  --pmss-primary-700: #000000;
+  --pmss-primary-800: #000000;
+
+  --pmss-accent-50: #f5f0dc;
+  --pmss-accent-100: #e8dcb0;
+  --pmss-accent-600: #8c7b6b;
+  --pmss-accent-700: #5c5046;
+
+  --pmss-link: #8c7b6b;
+  --pmss-link-hover: #5c5046;
+
+  --pmss-outline-accent-border: #c4a035;
+  --pmss-outline-accent-text: #5c5046;
+  --pmss-outline-accent-hover: #f5f0dc;
+
+  --pmss-gold: #c4a035;
+  --pmss-gold-light: #d9bc5c;
+
+  --pmss-shadow-auth: 0 12px 48px rgba(140, 123, 107, 0.1), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --pmss-shadow-card: 0 2px 20px rgba(140, 123, 107, 0.08), 0 1px 4px rgba(0, 0, 0, 0.03);
+  --pmss-focus-ring: rgb(196 160 53 / 0.45);
+}

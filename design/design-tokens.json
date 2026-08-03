@@ -1,0 +1,101 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "meta": {
+    "product": "PMSS",
+    "version": "1.0.0",
+    "description": "Protocol Management & Scheduling System — import into Figma Variables or Style Dictionary"
+  },
+  "color": {
+    "primary": {
+      "50": { "value": "#EFF6FF" },
+      "100": { "value": "#DBEAFE" },
+      "200": { "value": "#BFDBFE" },
+      "500": { "value": "#3B82F6" },
+      "600": { "value": "#2563EB" },
+      "700": { "value": "#1D4ED8" }
+    },
+    "neutral": {
+      "0": { "value": "#FFFFFF" },
+      "50": { "value": "#F9FAFB" },
+      "100": { "value": "#F3F4F6" },
+      "200": { "value": "#E5E7EB" },
+      "300": { "value": "#D1D5DB" },
+      "400": { "value": "#9CA3AF" },
+      "500": { "value": "#6B7280" },
+      "600": { "value": "#4B5563" },
+      "700": { "value": "#374151" },
+      "800": { "value": "#1F2937" },
+      "900": { "value": "#111827" }
+    },
+    "success": {
+      "50": { "value": "#ECFDF5" },
+      "500": { "value": "#10B981" },
+      "600": { "value": "#059669" }
+    },
+    "warning": {
+      "50": { "value": "#FFFBEB" },
+      "500": { "value": "#F59E0B" },
+      "600": { "value": "#D97706" }
+    },
+    "error": {
+      "50": { "value": "#FEF2F2" },
+      "500": { "value": "#EF4444" },
+      "600": { "value": "#DC2626" }
+    }
+  },
+  "typography": {
+    "fontFamily": { "sans": { "value": "Plus Jakarta Sans, system-ui, sans-serif" } },
+    "fontSize": {
+      "xs": { "value": "12px" },
+      "sm": { "value": "14px" },
+      "base": { "value": "16px" },
+      "lg": { "value": "18px" },
+      "xl": { "value": "20px" },
+      "2xl": { "value": "24px" },
+      "3xl": { "value": "30px" }
+    },
+    "fontWeight": {
+      "regular": { "value": "400" },
+      "medium": { "value": "500" },
+      "semibold": { "value": "600" },
+      "bold": { "value": "700" }
+    },
+    "lineHeight": {
+      "tight": { "value": "1.25" },
+      "normal": { "value": "1.5" },
+      "relaxed": { "value": "1.625" }
+    }
+  },
+  "radius": {
+    "sm": { "value": "8px" },
+    "md": { "value": "12px" },
+    "lg": { "value": "16px" },
+    "full": { "value": "9999px" }
+  },
+  "shadow": {
+    "sm": { "value": "0 1px 2px 0 rgba(17, 24, 39, 0.05)" },
+    "md": { "value": "0 4px 6px -1px rgba(17, 24, 39, 0.07), 0 2px 4px -2px rgba(17, 24, 39, 0.05)" },
+    "lg": { "value": "0 10px 15px -3px rgba(17, 24, 39, 0.08), 0 4px 6px -4px rgba(17, 24, 39, 0.05)" },
+    "card": { "value": "0 1px 3px rgba(17, 24, 39, 0.06), 0 1px 2px rgba(17, 24, 39, 0.04)" }
+  },
+  "spacing": {
+    "0": { "value": "0" },
+    "1": { "value": "4px" },
+    "2": { "value": "8px" },
+    "3": { "value": "12px" },
+    "4": { "value": "16px" },
+    "5": { "value": "20px" },
+    "6": { "value": "24px" },
+    "8": { "value": "32px" },
+    "10": { "value": "40px" },
+    "12": { "value": "48px" }
+  },
+  "layout": {
+    "sidebarWidth": { "value": "240px" },
+    "topBarHeight": { "value": "56px" },
+    "mobileBottomNavHeight": { "value": "64px" },
+    "contentMaxWidth": { "value": "1280px" },
+    "breakpointMobile": { "value": "768px" },
+    "breakpointTablet": { "value": "1024px" }
+  }
+}
