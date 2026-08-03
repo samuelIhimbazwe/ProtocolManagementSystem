@@ -21,13 +21,8 @@ coverage/
 .turbo/
 *.local
 
-# SQLite databases & local data
-server/data/*.sqlite
-server/data/*.sqlite-*
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal
-*.db
+# Uploaded evidence files
+server/data/uploads/
 
 # Logs
 logs/
