@@ -38,7 +38,7 @@ export default function NotificationsPage() {
     <div className="max-w-3xl mx-auto">
       <PageHeader
         title="Notifications"
-        description="Ministry alerts and schedule updates"
+        description="Announcements, schedule updates, and team assignments"
         actions={
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" className="pmss-btn-secondary text-sm h-9" onClick={markAllRead}>
