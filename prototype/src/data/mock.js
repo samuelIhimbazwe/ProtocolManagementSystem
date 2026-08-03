@@ -7,7 +7,6 @@ export const NAV_ITEMS = [
   { to: '/scheduling', label: 'Scheduling Center', icon: 'CalendarDays' },
   { to: '/finance', label: 'Finance', icon: 'Wallet' },
   { to: '/reports', label: 'Reports', icon: 'BarChart3' },
-  { to: '/settings', label: 'Settings', icon: 'Settings' },
 ]
 
 export const MOBILE_NAV = [
@@ -17,7 +16,6 @@ export const MOBILE_NAV = [
   { to: '/finance', label: 'Finance', icon: 'Wallet' },
   { to: '/attendance', label: 'Attendance', icon: 'ClipboardCheck' },
   { to: '/reports', label: 'Reports', icon: 'BarChart3' },
-  { to: '/settings', label: 'More', icon: 'Menu' },
 ]
 
 export const CHOIRS = {

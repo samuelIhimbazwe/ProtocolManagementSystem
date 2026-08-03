@@ -23,8 +23,8 @@ const FINANCE_BASE = {
 /** Permission flags — map to Figma role-based frame variants */
 export const ROLE_PERMISSIONS = {
   president: {
-    nav: ['/', '/members', '/attendance', '/scheduling', '/finance', '/reports', '/settings'],
-    mobileNav: ['/', '/members', '/scheduling', '/finance', '/settings'],
+    nav: ['/', '/members', '/attendance', '/scheduling', '/finance', '/reports'],
+    mobileNav: ['/', '/members', '/scheduling', '/finance'],
     manageMembers: false,
     viewUsers: true,
     manageUsers: false,
@@ -39,8 +39,8 @@ export const ROLE_PERMISSIONS = {
     viewFinanceReports: true,
   },
   vice_president: {
-    nav: ['/', '/members', '/attendance', '/scheduling', '/finance', '/reports', '/settings'],
-    mobileNav: ['/', '/members', '/scheduling', '/finance', '/settings'],
+    nav: ['/', '/members', '/attendance', '/scheduling', '/finance', '/reports'],
+    mobileNav: ['/', '/members', '/scheduling', '/finance'],
     manageMembers: false,
     viewUsers: true,
     manageUsers: false,
@@ -55,8 +55,8 @@ export const ROLE_PERMISSIONS = {
     viewFinanceReports: true,
   },
   secretary: {
-    nav: ['/', '/members', '/attendance', '/scheduling', '/finance', '/reports', '/settings'],
-    mobileNav: ['/', '/members', '/scheduling', '/finance', '/settings'],
+    nav: ['/', '/members', '/attendance', '/scheduling', '/finance', '/reports'],
+    mobileNav: ['/', '/members', '/scheduling', '/finance'],
     manageMembers: true,
     viewUsers: true,
     manageUsers: true,
@@ -70,8 +70,8 @@ export const ROLE_PERMISSIONS = {
     viewFinanceReports: true,
   },
   treasurer: {
-    nav: ['/', '/finance', '/attendance', '/reports', '/settings'],
-    mobileNav: ['/', '/finance', '/attendance', '/reports', '/settings'],
+    nav: ['/', '/finance', '/attendance', '/reports'],
+    mobileNav: ['/', '/finance', '/attendance', '/reports'],
     manageMembers: false,
     viewUsers: false,
     manageUsers: false,
@@ -88,8 +88,8 @@ export const ROLE_PERMISSIONS = {
     viewFinanceReports: true,
   },
   coordinator: {
-    nav: ['/', '/members', '/attendance', '/scheduling', '/finance', '/reports', '/settings'],
-    mobileNav: ['/', '/members', '/scheduling', '/finance', '/settings'],
+    nav: ['/', '/members', '/attendance', '/scheduling', '/finance', '/reports'],
+    mobileNav: ['/', '/members', '/scheduling', '/finance'],
     manageMembers: true,
     viewUsers: true,
     manageUsers: true,
@@ -103,8 +103,8 @@ export const ROLE_PERMISSIONS = {
     viewFinanceReports: true,
   },
   member: {
-    nav: ['/', '/attendance', '/scheduling', '/finance', '/settings'],
-    mobileNav: ['/', '/scheduling', '/finance', '/attendance', '/settings'],
+    nav: ['/', '/attendance', '/scheduling', '/finance'],
+    mobileNav: ['/', '/scheduling', '/finance', '/attendance'],
     manageMembers: false,
     viewUsers: false,
     manageUsers: false,

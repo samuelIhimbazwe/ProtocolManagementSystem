@@ -130,6 +130,20 @@ export async function seedDatabase({ force = false } = {}) {
     status: 'Active',
   })
 
+  const marieMember = db
+    .prepare(`SELECT id FROM members WHERE name = 'Marie Claire Uwamahoro' LIMIT 1`)
+    .get()
+  insertUser.run({
+    id: uuid(),
+    username: 'm.uwamahoro',
+    email: 'm.uwamahoro@church.internal',
+    password_hash: hash,
+    member_id: marieMember?.id ?? '7',
+    display_name: 'Marie Claire Uwamahoro',
+    app_role: 'member',
+    status: 'Active',
+  })
+
   const members = buildMemberRows()
   const payload = buildDefaultSchedulePayload(members)
   const draftId = uuid()
@@ -153,9 +167,35 @@ export async function seedDatabase({ force = false } = {}) {
   ).run(publishId, JSON.stringify(publishedPayload), coordinator?.id ?? null)
 
   audit('system.seed', null, {
-    users: ADMIN_ROSTER.length + 1,
+    users: ADMIN_ROSTER.length + 2,
     members: members.length,
     published: 'V1',
+  })
+  audit('schedule.publish', coordinator?.id ?? null, {
+    versionLabel: 'V1',
+    monthKey: '2026-08',
+    monthLabel: 'August 2026',
+    summary: 'Schedule V1 published for August 2026',
+  })
+  audit('schedule.team_assignments', coordinator?.id ?? null, {
+    monthKey: '2026-08',
+    monthLabel: 'August 2026',
+    teams: payload.teamAssignments?.length ?? 0,
+    summary: 'Service teams built for August 2026',
+  })
+  audit('schedule.choir_assignments', coordinator?.id ?? null, {
+    monthKey: '2026-08',
+    monthLabel: 'August 2026',
+    summary: 'Choir schedule generated for August 2026',
+  })
+  audit('schedule.leadership_approved', coordinator?.id ?? null, {
+    monthKey: '2026-08',
+    monthLabel: 'August 2026',
+    summary: 'Leadership assignments approved for August 2026',
+  })
+  audit('ministry.announcement', coordinator?.id ?? null, {
+    title: 'Welcome to the protocol month',
+    summary: 'August 2026 schedule is live. Check your team and choir assignments.',
   })
   console.log(
     'Seeded users (password: %s), %d members, schedule draft, and published V1.',

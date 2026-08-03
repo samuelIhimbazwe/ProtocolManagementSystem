@@ -176,7 +176,57 @@ export function initSchema() {
       body TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS service_reports (
+      id TEXT PRIMARY KEY,
+      service_id TEXT NOT NULL,
+      service_name TEXT NOT NULL,
+      service_date TEXT NOT NULL,
+      author_user_id TEXT NOT NULL,
+      author_member_id TEXT,
+      author_name TEXT NOT NULL,
+      duty_role TEXT NOT NULL CHECK (duty_role IN ('TL', 'VTL')),
+      how_it_went TEXT NOT NULL DEFAULT '',
+      issues_challenges TEXT NOT NULL DEFAULT '',
+      solutions TEXT NOT NULL DEFAULT '',
+      recommendations TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'submitted')),
+      submitted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (service_id, author_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS office_reports (
+      id TEXT PRIMARY KEY,
+      author_user_id TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      author_role TEXT NOT NULL,
+      jurisdiction TEXT NOT NULL,
+      title TEXT NOT NULL,
+      subtitle TEXT,
+      include_json TEXT NOT NULL DEFAULT '{}',
+      narrative_json TEXT NOT NULL DEFAULT '{}',
+      snapshot_json TEXT,
+      recipient_user_id TEXT,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'submitted')),
+      submitted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `)
+
+  ensureColumn('contribution_submissions', 'evidence_file_name', 'TEXT')
+  ensureColumn('contribution_submissions', 'evidence_file_mime', 'TEXT')
+  ensureColumn('contribution_submissions', 'evidence_file_path', 'TEXT')
+}
+
+function ensureColumn(table, column, typeSql) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all()
+  if (cols.some((c) => c.name === column)) return
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${typeSql}`)
 }
 
 export function audit(action, actorUserId, meta = {}) {
