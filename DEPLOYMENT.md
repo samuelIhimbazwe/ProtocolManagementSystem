@@ -59,16 +59,16 @@ After deploy, open `https://<your-service>.onrender.com/health` — expect `{ "o
 ## 3. Vercel (web)
 
 1. Import the repo in Vercel.
-2. **Root directory:** `prototype`
-3. Framework: Vite (auto-detected). Build: `npm run build`, output: `dist`.
-4. Set environment variables (Production):
+2. Leave **Root Directory** empty (repo root). Root `vercel.json` installs and builds `prototype/`.
+   - Alternative: set Root Directory to `prototype` and use that folder’s `vercel.json` instead.
+3. Set environment variables (Production):
 
 | Variable | Value |
 |----------|--------|
 | `VITE_API_URL` | `https://<your-render-service>.onrender.com` |
 | `VITE_DEMO_MODE` | `false` |
 
-5. Deploy. SPA routing is handled by `prototype/vercel.json`.
+4. Deploy. SPA routing is in `vercel.json`.
 
 Update Render `CORS_ORIGIN` to the final Vercel URL if it changed.
 
