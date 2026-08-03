@@ -6,6 +6,7 @@ import { MEMBERS } from '../data/mock'
 import { USE_API } from '../api/config'
 import { useAuth } from '../context/AuthContext'
 import { useRole } from '../context/RoleContext'
+import ColorModeToggle from '../components/ColorModeToggle'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -41,10 +42,16 @@ export default function LoginPage() {
 
   return (
     <div className="pmss-auth-page flex flex-col">
+      <div className="absolute top-3 right-3 z-10">
+        <ColorModeToggle />
+      </div>
       <div className="flex-1 flex items-center justify-center p-4 md:p-8">
         <div className="w-full max-w-[400px]">
           <div className="text-center mb-8">
-            <div className="pmss-auth-mark inline-flex w-14 h-14 rounded-auth bg-primary-700 text-white items-center justify-center mb-4 shadow-auth">
+            <div
+              className="pmss-auth-mark inline-flex w-14 h-14 rounded-auth text-white items-center justify-center mb-4 shadow-auth"
+              style={{ backgroundColor: 'var(--pmss-btn-bg)' }}
+            >
               <Church className="w-7 h-7" strokeWidth={1.75} />
             </div>
             <p className="pmss-auth-eyebrow pmss-auth-eyebrow--lead mb-2">Ministry access</p>
