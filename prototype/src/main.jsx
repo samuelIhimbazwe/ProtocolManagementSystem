@@ -9,9 +9,10 @@ import { MembersProvider } from './context/MembersContext'
 import { RoleProvider } from './context/RoleContext'
 import './index.css'
 
-import { applyThemeToDocument, readStoredTheme } from './theme/themeConfig.js'
+import { applyThemeToDocument, applyColorModeToDocument, readStoredTheme, readStoredColorMode } from './theme/themeConfig.js'
 
 applyThemeToDocument(readStoredTheme())
+applyColorModeToDocument(readStoredColorMode())
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

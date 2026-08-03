@@ -16,6 +16,7 @@ import FinanceReportDetailPage from './pages/FinanceReportDetail'
 import SettingsPage from './pages/Settings'
 import ActivityPage from './pages/Activity'
 import NotificationsPage from './pages/Notifications'
+import OfficeReportBuilderPage from './pages/OfficeReportBuilderPage'
 import RequireAuth from './components/RequireAuth'
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="finance" element={<FinancePage />} />
         <Route path="finance/reports/:reportId" element={<FinanceReportDetailPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="office-reports" element={<OfficeReportBuilderPage />} />
         <Route path="activity" element={<ActivityPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<SettingsPage />} />

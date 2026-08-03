@@ -32,8 +32,8 @@ export function ListViewTable({ columns, rows, emptyMessage = 'No items to show.
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="pmss-list-view-table w-full">
+    <div className="pmss-scroll-x">
+      <table className="pmss-list-view-table w-full min-w-[32rem]">
         <thead>
           <tr>
             {columns.map((col) => (
