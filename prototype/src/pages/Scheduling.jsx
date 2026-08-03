@@ -138,13 +138,13 @@ export default function SchedulingPage() {
         <p className="text-sm text-neutral-500 mb-4">Loading schedule from API…</p>
       )}
 
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-6 -mx-1 px-1 scrollbar-thin">
+      <div className="pmss-tab-rail mb-6">
         {visibleTabs.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => selectTab(t.id)}
-            className={`shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-card text-sm font-medium transition-colors ${
+            className={`shrink-0 inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-card text-sm font-medium transition-colors ${
               tab === t.id ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-200' : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-50'
             }`}
           >

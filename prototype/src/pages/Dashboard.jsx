@@ -14,6 +14,7 @@ import {
   Briefcase,
   Clock,
   Wallet,
+  FileText,
 } from 'lucide-react'
 import { PageHeader, StatCard, Badge } from '../layouts/AppShell'
 import { USE_API } from '../api/config'
@@ -29,6 +30,36 @@ import { ROLES } from '../data/roles'
 import { getMemberTeamAssignments, dutyWindowForService } from '../data/officeAccess'
 import { canRecordAttendance } from '../data/memberAttendance'
 import { formatRwf } from '../lib/money'
+import { ServiceReportModal, SubmittedServiceReportsPanel } from '../components/ServiceReportModal'
+import { fetchServiceReportForService } from '../api/serviceReports'
+import { ROLE_LABELS, resolveJurisdiction } from '../lib/officeReportBuilder'
+
+function OfficeReportEntryCard({ roleId, officeKind }) {
+  const jurisdiction = resolveJurisdiction(roleId, officeKind)
+  if (!USE_API || !jurisdiction) return null
+  return (
+    <Link
+      to="/office-reports"
+      className="pmss-card p-5 mb-8 block hover:border-primary-200 transition-colors group"
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <FileText className="w-4 h-4 text-primary-700 shrink-0" />
+            <h2 className="font-semibold text-neutral-900 group-hover:text-primary-800">
+              Office report builder
+            </h2>
+          </div>
+          <p className="text-sm text-neutral-500">
+            Build a report from anything you can access ({ROLE_LABELS[jurisdiction] ?? jurisdiction}), preview it,
+            download it, and submit it to a leader.
+          </p>
+        </div>
+        <span className="text-sm font-semibold text-primary-700 shrink-0">Open →</span>
+      </div>
+    </Link>
+  )
+}
 
 function DashboardSectionTabs({ section, onChange, showOffice, officeKind, dutyCount }) {
   if (!showOffice) return null
@@ -129,7 +160,13 @@ function PortalDashboard({ member, demoToday, isMemberRole, showOffice, teamAssi
             icon={UsersRound}
           />
         )}
-        <StatCard label="Published schedule" value={monthLabel} sub="View in Scheduling" icon={Calendar} />
+        <StatCard
+          label="Published schedule"
+          value={monthLabel}
+          sub="View in Scheduling →"
+          icon={Calendar}
+          to="/scheduling"
+        />
         {member?.attendanceRate != null && (
           <StatCard
             label="My attendance"
@@ -209,6 +246,11 @@ function PortalDashboard({ member, demoToday, isMemberRole, showOffice, teamAssi
 
 function OfficeDashboardLeadership({ permissions, roleId, navigate, stats, services, activity, notifications, monthLabel }) {
   const roleLabel = ROLES.find((r) => r.id === roleId)?.label
+  const [toast, setToast] = useState('')
+  const showToast = (msg) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2800)
+  }
   const quickActions = [
     { label: 'Generate Choir Schedule', icon: Music, to: '/scheduling?tab=choir' },
     { label: 'Build Service Teams', icon: UsersRound, to: '/scheduling?tab=teams' },
@@ -234,6 +276,7 @@ function OfficeDashboardLeadership({ permissions, roleId, navigate, stats, servi
           value={stats.publishedSchedule}
           sub={stats.scheduleStatus}
           icon={CheckCircle2}
+          to="/scheduling"
         />
       </div>
 
@@ -259,6 +302,8 @@ function OfficeDashboardLeadership({ permissions, roleId, navigate, stats, servi
           />
         </div>
       )}
+
+      {USE_API && <OfficeReportEntryCard roleId={roleId} officeKind="leadership" />}
 
       {permissions.manageSchedule && (
         <section className="mb-8">
@@ -339,6 +384,8 @@ function OfficeDashboardLeadership({ permissions, roleId, navigate, stats, servi
             {activity.length === 0 && <p className="text-sm text-neutral-500">No recent activity.</p>}
           </div>
 
+          {USE_API && <SubmittedServiceReportsPanel />}
+
           <div className="pmss-card p-5 h-fit">
             <div className="flex justify-between items-center mb-3">
               <h2 className="font-semibold">Notifications</h2>
@@ -363,11 +410,45 @@ function OfficeDashboardLeadership({ permissions, roleId, navigate, stats, servi
       </div>
 
       <p className="text-xs text-neutral-400 mt-8">{roleLabel} · {monthLabel}</p>
+      {toast && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-card bg-neutral-900 text-white text-sm shadow-lg">
+          {toast}
+        </div>
+      )}
     </>
   )
 }
 
 function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }) {
+  const [reportDuty, setReportDuty] = useState(null)
+  const [toast, setToast] = useState('')
+  const [reportStatusByService, setReportStatusByService] = useState({})
+
+  const showToast = (msg) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2800)
+  }
+
+  useEffect(() => {
+    if (!USE_API || !activeDuties?.length) return
+    let cancelled = false
+    ;(async () => {
+      const next = {}
+      for (const duty of activeDuties) {
+        try {
+          const data = await fetchServiceReportForService(duty.serviceId)
+          if (data.report) next[duty.serviceId] = data.report.status
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!cancelled) setReportStatusByService(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeDuties])
+
   return (
     <>
       <div className="pmss-card p-5 mb-6 border-amber-200 bg-amber-50/40">
@@ -376,21 +457,32 @@ function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }
           <div>
             <h2 className="font-semibold text-neutral-900">Temporary team leadership access</h2>
             <p className="text-sm text-neutral-600 mt-1">
-              Office appears because you are assigned as Team Leader or Vice Team Leader. When the duty window
-              ends, this tab is hidden and you return to Portal-only access.
+              Office appears because you are assigned as Team Leader or Vice Team Leader. Use the office report
+              builder below (or a per-service report) to document how the service went. When the duty window
+              ends, this tab is hidden.
             </p>
           </div>
         </div>
       </div>
 
+      {USE_API && <OfficeReportEntryCard roleId={roleId} officeKind="team_duty" />}
+
       <div className="space-y-6">
         {activeDuties.map((duty) => {
           const window = dutyWindowForService(duty.serviceDate)
+          const reportStatus = reportStatusByService[duty.serviceId]
           return (
             <div key={`${duty.serviceId}-${duty.dutyRole}`} className="pmss-card p-5">
               <div className="flex flex-wrap justify-between gap-3 mb-4">
                 <div>
-                  <Badge variant="warning">{duty.dutyRole === 'TL' ? 'Team Leader' : 'Vice Team Leader'}</Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="warning">{duty.dutyRole === 'TL' ? 'Team Leader' : 'Vice Team Leader'}</Badge>
+                    {reportStatus && (
+                      <Badge variant={reportStatus === 'submitted' ? 'success' : 'warning'}>
+                        Report: {reportStatus === 'submitted' ? 'Submitted' : 'Draft'}
+                      </Badge>
+                    )}
+                  </div>
                   <h3 className="font-semibold text-lg mt-2">{duty.serviceName}</h3>
                   <p className="text-sm text-neutral-500">{duty.dateLabel}</p>
                   <p className="text-xs text-neutral-400 mt-2">
@@ -398,11 +490,21 @@ function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {USE_API && (
+                    <button
+                      type="button"
+                      onClick={() => setReportDuty(duty)}
+                      className="pmss-btn-primary inline-flex items-center gap-2 text-sm h-9 px-3"
+                    >
+                      <FileText className="w-4 h-4" />
+                      {reportStatus === 'submitted' ? 'View report' : 'Write service report'}
+                    </button>
+                  )}
                   {canRecordAttendance(roleId, permissions) && (
                     <button
                       type="button"
                       onClick={() => navigate('/attendance/record')}
-                      className="pmss-btn-primary inline-flex items-center gap-2 text-sm h-9 px-3"
+                      className="pmss-btn-secondary inline-flex items-center gap-2 text-sm h-9 px-3"
                     >
                       <ClipboardCheck className="w-4 h-4" />
                       Record attendance
@@ -436,6 +538,24 @@ function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }
           )
         })}
       </div>
+
+      <ServiceReportModal
+        open={Boolean(reportDuty)}
+        duty={reportDuty}
+        onClose={() => setReportDuty(null)}
+        onToast={showToast}
+        onSaved={(report) => {
+          if (report?.serviceId) {
+            setReportStatusByService((prev) => ({ ...prev, [report.serviceId]: report.status }))
+          }
+        }}
+      />
+
+      {toast && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-card bg-neutral-900 text-white text-sm shadow-lg">
+          {toast}
+        </div>
+      )}
     </>
   )
 }

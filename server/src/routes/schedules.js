@@ -102,7 +102,42 @@ router.put('/draft', authMiddleware, (req, res) => {
   }
 
   const validated = attachValidation(payload)
+  const previous = parsePayload(draft)
   db.prepare(`UPDATE schedule_versions SET payload_json = ? WHERE id = ?`).run(JSON.stringify(validated), draft.id)
+
+  const monthLabel = validated.monthLabel || previous.monthLabel || draft.month_key
+  const monthKey = validated.monthKey || draft.month_key
+  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+
+  if (!same(previous.teamAssignments, validated.teamAssignments)) {
+    audit('schedule.team_assignments', req.auth.sub, {
+      monthKey,
+      monthLabel,
+      teams: validated.teamAssignments?.length ?? 0,
+      summary: `Service teams updated for ${monthLabel}`,
+    })
+  }
+  if (!same(previous.choirAssignments, validated.choirAssignments)) {
+    audit('schedule.choir_assignments', req.auth.sub, {
+      monthKey,
+      monthLabel,
+      choirs: validated.choirAssignments?.length ?? 0,
+      summary: `Choir schedule updated for ${monthLabel}`,
+    })
+  }
+  if (!same(previous.leadershipReview, validated.leadershipReview)) {
+    const nextLead = validated.leadershipReview ?? []
+    const approved =
+      nextLead.length > 0 && nextLead.every((r) => /approv/i.test(String(r.status ?? '')))
+    audit(approved ? 'schedule.leadership_approved' : 'schedule.leadership_updated', req.auth.sub, {
+      monthKey,
+      monthLabel,
+      summary: approved
+        ? `Leadership assignments approved for ${monthLabel}`
+        : `Leadership assignments updated for ${monthLabel}`,
+    })
+  }
+
   audit('schedule.draft_update', req.auth.sub, { draftId: draft.id })
 
   return res.json({ ok: true, payload: validated })
@@ -155,7 +190,12 @@ router.post('/publish', authMiddleware, (req, res) => {
      VALUES (?, ?, 'published', ?, ?, datetime('now'), ?)`,
   ).run(publishId, versionLabel, draft.month_key, JSON.stringify(payload), req.auth.sub)
 
-  audit('schedule.publish', req.auth.sub, { versionLabel, monthKey: draft.month_key })
+  audit('schedule.publish', req.auth.sub, {
+    versionLabel,
+    monthKey: draft.month_key,
+    monthLabel: payload.monthLabel || draft.month_key,
+    summary: `Schedule ${versionLabel} published for ${payload.monthLabel || draft.month_key}`,
+  })
 
   return res.json({
     versionLabel,
