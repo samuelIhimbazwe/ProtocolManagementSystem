@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldCheck, SlidersHorizontal, UserCircle, Users } from 'lucide-react'
+import { KeyRound, ShieldCheck, SlidersHorizontal, UserCircle, Users } from 'lucide-react'
 import { PageHeader, Badge } from '../layouts/AppShell'
 import ThemePicker from '../components/ThemePicker'
 import Modal from '../components/Modal'
@@ -22,7 +22,114 @@ import {
   memberDisplayFields,
 } from '../data/settingsByRole'
 import { USE_API } from '../api/config'
+import { changePassword } from '../api/client'
 import { fetchRules, saveRules as saveRulesApi } from '../api/schedule'
+
+function ChangePasswordCard({ onToast }) {
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (newPassword.length < 8) {
+      setError('New password must be at least 8 characters')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match')
+      return
+    }
+    if (!USE_API) {
+      onToast('Password change is available when connected to the API')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await changePassword(currentPassword, newPassword)
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      onToast('Password updated')
+    } catch (err) {
+      setError(err.message ?? 'Could not update password')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section className="pmss-card p-5 mb-6" id="change-password">
+      <div className="flex gap-3 mb-4">
+        <div className="p-2.5 rounded-card bg-primary-50 text-primary-600 h-fit">
+          <KeyRound className="w-5 h-5" />
+        </div>
+        <div>
+          <h2 className="font-semibold text-neutral-900">Change password</h2>
+          <p className="text-sm text-neutral-500 mt-1">
+            Update your sign-in password. You will need your current password to confirm.
+          </p>
+        </div>
+      </div>
+      <form onSubmit={submit} className="space-y-3 max-w-md">
+        <div>
+          <label className="block text-sm font-medium text-neutral-700 mb-1.5" htmlFor="settings-current-password">
+            Current password
+          </label>
+          <input
+            id="settings-current-password"
+            type="password"
+            className="pmss-input"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-neutral-700 mb-1.5" htmlFor="settings-new-password">
+            New password
+          </label>
+          <input
+            id="settings-new-password"
+            type="password"
+            className="pmss-input"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+            placeholder="At least 8 characters"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-neutral-700 mb-1.5" htmlFor="settings-confirm-password">
+            Confirm new password
+          </label>
+          <input
+            id="settings-confirm-password"
+            type="password"
+            className="pmss-input"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            required
+          />
+        </div>
+        {error && (
+          <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-input px-3 py-2" role="alert">
+            {error}
+          </p>
+        )}
+        <button type="submit" className="pmss-btn-primary" disabled={submitting}>
+          {submitting ? 'Updating…' : 'Update password'}
+        </button>
+      </form>
+    </section>
+  )
+}
 
 function severityVariant(severity) {
   if (severity === 'Error') return 'error'
@@ -193,7 +300,7 @@ function RuleConfigurationBlock({
 }
 
 export default function SettingsPage() {
-  const { roleId, member, permissions } = useRole()
+  const { roleId, member, permissions, authUser } = useRole()
   const layout = getSettingsLayout(roleId)
   const roleLabel = ROLES.find((r) => r.id === roleId)?.label ?? 'User'
 
@@ -263,7 +370,13 @@ export default function SettingsPage() {
   }
 
   const sectionFields = (sectionKey) => {
-    if (sectionKey === 'account') return memberAccountFields(member)
+    if (sectionKey === 'account') {
+      const base = memberAccountFields(member)
+      if (authUser?.username) {
+        return [{ label: 'Username', value: authUser.username }, ...base]
+      }
+      return base
+    }
     if (sectionKey === 'memberNotifications') return memberNotificationFields(memberPrefs)
     if (sectionKey === 'display') return memberDisplayFields(memberPrefs)
     return SETTINGS_SECTIONS[sectionKey]?.fields ?? []
@@ -295,6 +408,8 @@ export default function SettingsPage() {
 
       <ThemePicker />
 
+      <ChangePasswordCard onToast={showToast} />
+
       {roleId === 'member' && (
         <div className="pmss-card p-4 mb-6 flex gap-3 items-start border-primary-100 bg-primary-50/40">
           <UserCircle className="w-5 h-5 text-primary-600 shrink-0 mt-0.5" />
@@ -316,7 +431,7 @@ export default function SettingsPage() {
           <div>
             <p className="font-semibold text-neutral-900">User accounts</p>
             <p className="text-sm text-neutral-500 mt-1">
-              Invite logins, deactivate access, and send password resets — linked to the member roster.
+              Invite or create logins, deactivate access, and send password resets — linked to the member roster.
             </p>
             <p className="text-xs text-primary-600 font-medium mt-2">Open user accounts →</p>
           </div>

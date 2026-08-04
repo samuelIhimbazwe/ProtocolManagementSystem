@@ -277,15 +277,8 @@
     padding-top: 0.25rem;
     border-top: 1px solid rgb(232 226 216 / 0.18);
     max-width: 28rem;
-  }
-
-  .pmss-login-scripture-line {
-    margin: 0.85rem 0 0;
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    font-size: clamp(1.05rem, 2.4vw, 1.2rem);
-    line-height: 1.45;
-    color: rgb(247 243 234 / 0.82);
-    max-width: 34ch;
+    /* Reserve former secondary-verse footprint */
+    min-height: 4.75rem;
   }
 
   .pmss-login-brand-foot {
@@ -896,10 +889,6 @@
     border-top-color: rgb(140 123 107 / 0.25);
   }
 
-  [data-theme='b'] .pmss-login-scripture-line {
-    color: rgb(38 38 38 / 0.82);
-  }
-
   [data-theme='b'] .pmss-login-brand-wordmark {
     color: #1a1a1a;
   }
@@ -935,10 +924,6 @@
   [data-color-mode='dark'][data-theme='b'] .pmss-login-scripture-text,
   [data-color-mode='dark'][data-theme='b'] .pmss-login-brand-wordmark {
     color: #f7f3ea;
-  }
-
-  [data-color-mode='dark'][data-theme='b'] .pmss-login-scripture-line {
-    color: rgb(232 226 216 / 0.78);
   }
 
   [data-color-mode='dark'][data-theme='b'] .pmss-login-scripture-cite,
