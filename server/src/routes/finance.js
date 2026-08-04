@@ -563,7 +563,7 @@ router.get('/submissions', authMiddleware, async (req, res) => {
   }
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
-  const rows = await db
+  const rows = (await db
     .prepare(
       `SELECT s.*, t.name AS contribution_name, m.name AS member_name, m.phone AS member_phone,
         pm.label AS payment_method_label, u.display_name AS verified_by_name,
@@ -578,8 +578,7 @@ router.get('/submissions', authMiddleware, async (req, res) => {
        ORDER BY s.submitted_at DESC
        LIMIT 200`,
     )
-    .all(...params)
-    .map(mapSubmission)
+    .all(...params)).map(mapSubmission)
 
   const claimedTotal = rows.reduce((s, r) => s + (r.claimedAmount || 0), 0)
   const confirmedTotal = rows.reduce((s, r) => {
@@ -756,7 +755,7 @@ router.post('/submissions/:id/verify', authMiddleware, async (req, res) => {
 /** Follow-ups */
 router.get('/followups', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_LEDGER)) return
-  const rows = await db
+  const rows = (await db
     .prepare(
       `SELECT f.*, s.claimed_amount, s.confirmed_amount, s.status AS submission_status,
         s.verification_note, m.name AS member_name, t.name AS contribution_name
@@ -766,8 +765,7 @@ router.get('/followups', authMiddleware, async (req, res) => {
        JOIN contribution_types t ON t.id = s.contribution_type_id
        ORDER BY f.updated_at DESC`,
     )
-    .all()
-    .map((r) => ({
+    .all()).map((r) => ({
       id: r.id,
       submissionId: r.submission_id,
       outstandingAmount: r.outstanding_amount,
@@ -798,14 +796,13 @@ router.get('/followups/:id', authMiddleware, async (req, res) => {
     )
     .get(req.params.id)
   if (!r) return res.status(404).json({ error: 'Not found' })
-  const notes = await db
+  const notes = (await db
     .prepare(
       `SELECT n.*, u.display_name AS author_name FROM contribution_followup_notes n
        LEFT JOIN users u ON u.id = n.author_user_id
        WHERE n.followup_id = ? ORDER BY n.created_at`,
     )
-    .all(req.params.id)
-    .map((n) => ({
+    .all(req.params.id)).map((n) => ({
       id: n.id,
       body: n.body,
       authorName: n.author_name,
@@ -857,7 +854,7 @@ router.patch('/followups/:id', authMiddleware, async (req, res) => {
 /** Reports */
 router.get('/reports', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_REPORTS)) return
-  const byType = await db
+  const byType = (await db
     .prepare(
       `SELECT t.id, t.name, t.ministry_goal,
         COALESCE(SUM(CASE WHEN s.status = 'confirmed' THEN COALESCE(s.confirmed_amount, s.claimed_amount)
@@ -868,8 +865,7 @@ router.get('/reports', authMiddleware, async (req, res) => {
        GROUP BY t.id
        ORDER BY t.name`,
     )
-    .all()
-    .map((r) => ({
+    .all()).map((r) => ({
       id: r.id,
       name: r.name,
       ministryGoal: r.ministry_goal,
@@ -879,7 +875,7 @@ router.get('/reports', authMiddleware, async (req, res) => {
         r.ministry_goal > 0 ? Math.min(100, Math.round((r.collected / r.ministry_goal) * 100)) : null,
     }))
 
-  const byMember = await db
+  const byMember = (await db
     .prepare(
       `SELECT m.id, m.name, m.phone,
         COALESCE(SUM(CASE WHEN s.status = 'confirmed' THEN COALESCE(s.confirmed_amount, s.claimed_amount)
@@ -891,8 +887,7 @@ router.get('/reports', authMiddleware, async (req, res) => {
        GROUP BY m.id
        ORDER BY paid DESC, m.name`,
     )
-    .all()
-    .map((r) => ({
+    .all()).map((r) => ({
       id: r.id,
       name: r.name,
       phone: r.phone,
@@ -913,7 +908,7 @@ router.get('/reports', authMiddleware, async (req, res) => {
     )
     .all()
 
-  const partials = await db
+  const partials = (await db
     .prepare(
       `SELECT s.*, m.name AS member_name, t.name AS contribution_name
        FROM contribution_submissions s
@@ -922,10 +917,9 @@ router.get('/reports', authMiddleware, async (req, res) => {
        WHERE s.status = 'partial'
        ORDER BY s.confirmed_at DESC`,
     )
-    .all()
-    .map(mapSubmission)
+    .all()).map(mapSubmission)
 
-  const declined = await db
+  const declined = (await db
     .prepare(
       `SELECT s.*, m.name AS member_name, t.name AS contribution_name
        FROM contribution_submissions s
@@ -934,8 +928,7 @@ router.get('/reports', authMiddleware, async (req, res) => {
        WHERE s.status = 'declined'
        ORDER BY s.confirmed_at DESC`,
     )
-    .all()
-    .map(mapSubmission)
+    .all()).map(mapSubmission)
 
   return res.json({
     collection: byType,
