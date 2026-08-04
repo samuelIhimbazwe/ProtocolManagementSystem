@@ -239,6 +239,8 @@ export const VALIDATION_ROWS = [
   { rule: 'Choir rotation', issue: 'El Bethel scheduled within 7-day window twice', severity: 'Warning', service: '14 Aug Friday', status: 'Open' },
   { rule: 'Secondary choir balance', issue: 'Beulah Choir used once this month', severity: 'Warning', service: '16 Aug SS2', status: 'Open' },
   { rule: 'Sunday team size', issue: 'All Sunday services filled with 10 members (incl. TL/VTL)', severity: 'Passed', service: 'August Sundays', status: 'Resolved' },
+  { rule: 'Tuesday team size', issue: 'All Tuesday services filled with 10 members (incl. TL/VTL)', severity: 'Passed', service: 'August Tuesdays', status: 'Resolved' },
+  { rule: 'No Friday protocol teams', issue: 'Protocol does not serve on Friday — no Friday teams present', severity: 'Passed', service: 'Friday services', status: 'Resolved' },
   { rule: 'Igaburo team size', issue: 'Igaburo Service filled with 10 members (incl. TL/VTL)', severity: 'Passed', service: '29 Aug Igaburo', status: 'Resolved' },
 ]
 

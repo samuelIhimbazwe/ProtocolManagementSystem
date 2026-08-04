@@ -88,7 +88,12 @@ export default function AttendanceRecordPage() {
         description={`${serviceMeta.serviceType} — ${serviceMeta.serviceDate}`}
         actions={
           <div className="pmss-no-print">
-            <DisplayFormatToggle format={format} onChange={setFormat} bulletinId="attendance-session-bulletin" />
+            <DisplayFormatToggle
+              format={format}
+              onChange={setFormat}
+              bulletinId="attendance-session-bulletin"
+              bulletinTitle="Attendance roll bulletin"
+            />
           </div>
         }
       />

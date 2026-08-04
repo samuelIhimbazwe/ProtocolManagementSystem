@@ -64,7 +64,12 @@ export default function AttendanceDashboardPage() {
         description="August 2026 — participation across services"
         actions={
           <div className="flex flex-wrap items-center gap-3 pmss-no-print">
-            <DisplayFormatToggle format={format} onChange={setFormat} bulletinId="attendance-bulletin" />
+            <DisplayFormatToggle
+              format={format}
+              onChange={setFormat}
+              bulletinId="attendance-bulletin"
+              bulletinTitle="Attendance bulletin"
+            />
             {showRecordButton ? (
               <Link to="/attendance/record" className="pmss-btn-primary">
                 <Plus className="w-4 h-4" /> Record attendance
