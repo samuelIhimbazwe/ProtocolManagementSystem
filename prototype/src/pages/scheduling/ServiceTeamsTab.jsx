@@ -13,6 +13,7 @@ import { MEMBERS, SERVICES, TEAM_ASSIGNMENTS } from '../../data/mock'
 import {
   FULL_ROSTER_TEAM_SIZE,
   buildMonthlyServiceTeams,
+  fullRosterKindLabel,
   isFullRosterKind,
   maxTeamSizeForRow,
   minTeamSizeForRow,
@@ -22,6 +23,7 @@ import {
   downloadServiceTeamsExcel,
   downloadServiceTeamsPdf,
 } from '../../lib/serviceTeamsExport'
+import { downloadBulletinPdf } from '../../lib/bulletinPdf'
 
 function teamKey(t) {
   return t.serviceId ?? t.date
@@ -67,8 +69,8 @@ export default function ServiceTeamsTab({
       setTeams(built.map((t) => ({ ...normalizeTeam(t), _key: teamKey(t) })))
       showToast(
         shuffle
-          ? `Teams rebuilt — ${fullRoster} full-roster services @ ${FULL_ROSTER_TEAM_SIZE} members`
-          : `Teams built — Sundays + Igaburo (${FULL_ROSTER_TEAM_SIZE} each, incl. TL & VTL)`,
+          ? `Teams rebuilt — ${fullRoster} services @ ${FULL_ROSTER_TEAM_SIZE} members (no Friday)`
+          : `Teams built — Sunday + Tuesday + Igaburo (${FULL_ROSTER_TEAM_SIZE} each; no Friday)`,
       )
     } catch {
       showToast('Not enough protocol members to build teams')
@@ -130,7 +132,7 @@ export default function ServiceTeamsTab({
 
   const handleAction = (index, actionId) => openModal(index, actionId)
 
-  const exportTeams = (formatId) => {
+  const exportTeams = async (formatId) => {
     if (!teams.length) {
       showToast('No teams to download')
       return
@@ -143,8 +145,17 @@ export default function ServiceTeamsTab({
         downloadServiceTeamsExcel(teams, { monthLabel })
         showToast('Service teams downloaded (Excel)')
       } else if (formatId === 'pdf') {
-        downloadServiceTeamsPdf(teams, { monthLabel })
-        showToast('Use Print → Save as PDF')
+        // Prefer the visual bulletin (church header, weeks, editable labels)
+        let result
+        if (document.getElementById('teams-bulletin')) {
+          result = await downloadBulletinPdf('teams-bulletin', {
+            title: 'Service teams bulletin',
+            fileName: `pmss-service-teams-bulletin.pdf`,
+          })
+        } else {
+          result = await downloadServiceTeamsPdf(teams, { monthLabel })
+        }
+        showToast(`Downloaded ${result?.fileName ?? 'bulletin.pdf'}`)
       }
     } catch (err) {
       showToast(err.message ?? 'Download failed')
@@ -208,12 +219,19 @@ export default function ServiceTeamsTab({
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pmss-no-print">
-        <DisplayFormatToggle format={format} onChange={setFormat} bulletinId="teams-bulletin" />
+        <DisplayFormatToggle
+          format={format}
+          onChange={setFormat}
+          bulletinId="teams-bulletin"
+          bulletinTitle="Service teams bulletin"
+          onToast={showToast}
+        />
       </div>
       <p className="text-sm text-neutral-600 bg-primary-50 border border-primary-100 rounded-card px-4 py-3 pmss-no-print">
         <strong className="text-neutral-900">{protocolPool.length} protocol members</strong> in roster. Build engine
-        fills <strong>all Sunday services and Igaburo</strong> with <strong>{FULL_ROSTER_TEAM_SIZE} members</strong>{' '}
-        each (team leader + vice included), then other weekday services.
+        fills <strong>Sunday and Tuesday services</strong> (and Igaburo) with{' '}
+        <strong>{FULL_ROSTER_TEAM_SIZE} members</strong> each (team leader + vice included). Protocol does{' '}
+        <strong>not</strong> serve on Friday — those services are skipped.
       </p>
       <div className="flex flex-wrap gap-2 pmss-no-print">
         {canEdit && (
@@ -233,6 +251,17 @@ export default function ServiceTeamsTab({
         />
       </div>
 
+      {format !== 'bulletin' && (
+        <div className="pmss-offscreen-export" aria-hidden="true">
+          <ServiceTeamsBulletin
+            id="teams-bulletin"
+            teams={teams}
+            monthLabel={monthLabel}
+            canEdit={false}
+            onTeamsChange={setTeams}
+          />
+        </div>
+      )}
       {format === 'bulletin' ? (
         <ServiceTeamsBulletin
           id="teams-bulletin"
@@ -257,7 +286,7 @@ export default function ServiceTeamsTab({
             title={t.date}
             date={
               isFullRosterKind(t.kind)
-                ? `${t.kind === 'igaburo' ? 'Igaburo' : 'Sunday'} · ${t.size}/${FULL_ROSTER_TEAM_SIZE} members`
+                ? `${fullRosterKindLabel(t.kind)} · ${t.size}/${FULL_ROSTER_TEAM_SIZE} members`
                 : `Weekday · Team size: ${t.size}`
             }
             actions={
@@ -267,7 +296,8 @@ export default function ServiceTeamsTab({
             }
           >
             <div className="flex flex-wrap gap-2 mb-1">
-              {t.kind === 'sunday' && <Badge variant="primary">Sunday priority</Badge>}
+              {t.kind === 'sunday' && <Badge variant="primary">Sunday</Badge>}
+              {t.kind === 'tuesday' && <Badge variant="primary">Tuesday</Badge>}
               {t.kind === 'igaburo' && <Badge variant="primary">Igaburo</Badge>}
               {isFullRosterKind(t.kind) && t.size === FULL_ROSTER_TEAM_SIZE && (
                 <Badge variant="success">Full roster</Badge>

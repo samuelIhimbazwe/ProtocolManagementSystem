@@ -20,6 +20,7 @@ import {
   downloadChoirScheduleExcel,
   downloadChoirSchedulePdf,
 } from '../../lib/choirScheduleExport'
+import { downloadBulletinPdf } from '../../lib/bulletinPdf'
 import ScheduleDownloadMenu from '../../components/ScheduleDownloadMenu'
 
 function choirKey(c, i) {
@@ -158,7 +159,7 @@ export default function ChoirScheduleTab({
     showToast('Full choir schedule regenerated')
   }
 
-  const downloadSchedule = (format) => {
+  const downloadSchedule = async (format) => {
     if (assignments.length === 0) {
       showToast('No choir assignments to download')
       return
@@ -171,8 +172,16 @@ export default function ChoirScheduleTab({
         downloadChoirScheduleExcel(assignments, { monthLabel })
         showToast('Choir schedule downloaded (Excel)')
       } else if (format === 'pdf') {
-        downloadChoirSchedulePdf(assignments, { monthLabel })
-        showToast('Use Print → Save as PDF')
+        let result
+        if (document.getElementById('choir-bulletin')) {
+          result = await downloadBulletinPdf('choir-bulletin', {
+            title: 'Choir schedule bulletin',
+            fileName: 'pmss-choir-schedule-bulletin.pdf',
+          })
+        } else {
+          result = await downloadChoirSchedulePdf(assignments, { monthLabel })
+        }
+        showToast(`Downloaded ${result?.fileName ?? 'bulletin.pdf'}`)
       }
     } catch (err) {
       showToast(err.message ?? 'Download failed')
@@ -201,7 +210,13 @@ export default function ChoirScheduleTab({
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pmss-no-print">
-        <DisplayFormatToggle format={format} onChange={setFormat} bulletinId="choir-bulletin" />
+        <DisplayFormatToggle
+          format={format}
+          onChange={setFormat}
+          bulletinId="choir-bulletin"
+          bulletinTitle="Choir schedule bulletin"
+          onToast={showToast}
+        />
       </div>
 
       <div className="flex flex-wrap gap-2 pmss-no-print">
@@ -228,6 +243,11 @@ export default function ChoirScheduleTab({
         />
       </div>
 
+      {format !== 'bulletin' && (
+        <div className="pmss-offscreen-export" aria-hidden="true">
+          <ChoirScheduleBulletin id="choir-bulletin" assignments={assignments} />
+        </div>
+      )}
       {format === 'bulletin' ? (
         <ChoirScheduleBulletin id="choir-bulletin" assignments={assignments} />
       ) : format === 'list' ? (

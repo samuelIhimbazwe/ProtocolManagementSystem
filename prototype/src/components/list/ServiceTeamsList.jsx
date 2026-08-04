@@ -17,6 +17,7 @@ export default function ServiceTeamsList({ teams, canEdit, onAction, onRemoveMem
           <p className="pmss-list-cell-primary leading-snug">{t.date}</p>
           <div className="flex flex-wrap gap-1">
             {t.kind === 'sunday' && <Badge variant="primary">Sunday</Badge>}
+            {t.kind === 'tuesday' && <Badge variant="primary">Tuesday</Badge>}
             {t.kind === 'igaburo' && <Badge variant="primary">Igaburo</Badge>}
             {t.kind === 'weekday' && <Badge variant="neutral">Weekday</Badge>}
             {isFullRosterKind(t.kind) && t.size === FULL_ROSTER_TEAM_SIZE && (

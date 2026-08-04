@@ -1,4 +1,5 @@
 import { downloadBlob } from './choirScheduleExport.js'
+import { downloadHtmlDocumentAsPdf } from './bulletinPdf.js'
 
 function escapeCsvCell(value) {
   const s = String(value ?? '')
@@ -16,6 +17,7 @@ function escapeHtml(value) {
 
 function kindLabel(kind) {
   if (kind === 'sunday') return 'Sunday'
+  if (kind === 'tuesday') return 'Tuesday'
   if (kind === 'igaburo') return 'Igaburo'
   return 'Weekday'
 }
@@ -81,8 +83,8 @@ export function downloadServiceTeamsExcel(teams, { filename, monthLabel = 'Augus
   downloadBlob(new Blob(['\uFEFF', html], { type: 'application/vnd.ms-excel;charset=utf-8' }), name)
 }
 
-/** Opens print dialog so the user can save as PDF. */
-export function downloadServiceTeamsPdf(teams, { monthLabel = 'August 2026' } = {}) {
+/** Downloads a real PDF of the service teams roster (fallback when bulletin DOM is unavailable). */
+export async function downloadServiceTeamsPdf(teams, { monthLabel = 'August 2026', filename } = {}) {
   const rows = buildServiceTeamExportRows(teams)
   const blocks = rows
     .map((r) => {
@@ -93,50 +95,25 @@ export function downloadServiceTeamsPdf(teams, { monthLabel = 'August 2026' } = 
             .map((m) => `<li>${escapeHtml(m)}</li>`)
             .join('')
         : '<li class="empty">No members</li>'
-      return `<section class="team">
-  <h2>${escapeHtml(r.date)} · ${escapeHtml(r.service)}</h2>
-  <p class="meta">${escapeHtml(r.kind)} · ${escapeHtml(r.size)} members
+      return `<section class="team" style="break-inside:avoid;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid #ddd">
+  <h2 style="font-size:14px;margin:0 0 4px">${escapeHtml(r.date)} · ${escapeHtml(r.service)}</h2>
+  <p style="font-size:12px;color:#444;margin:0 0 8px">${escapeHtml(r.kind)} · ${escapeHtml(r.size)} members
     ${r.teamLeader ? ` · TL: <strong>${escapeHtml(r.teamLeader)}</strong>` : ''}
     ${r.viceTeamLeader ? ` · VTL: <strong>${escapeHtml(r.viceTeamLeader)}</strong>` : ''}
   </p>
-  <ul>${members}</ul>
+  <ul style="margin:0;padding-left:1.2rem;font-size:12px">${members}</ul>
 </section>`
     })
     .join('')
 
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Service Teams PDF</title>
-<style>
-  body { font-family: system-ui, sans-serif; padding: 24px; color: #111; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  p.sub { font-size: 12px; color: #555; margin: 0 0 20px; }
-  .team { break-inside: avoid; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid #ddd; }
-  .team h2 { font-size: 14px; margin: 0 0 4px; }
-  .meta { font-size: 12px; color: #444; margin: 0 0 8px; }
-  ul { margin: 0; padding-left: 1.2rem; font-size: 12px; }
-  li.empty { color: #888; list-style: none; margin-left: -1.2rem; }
-  @media print { body { padding: 12px; } .team { border-color: #bbb; } }
-</style></head>
-<body>
-  <h1>Service teams</h1>
-  <p class="sub">${escapeHtml(monthLabel)} · PMSS</p>
-  ${blocks || '<p>No teams to export.</p>'}
-</body></html>`
+  const html = `
+  <div style="font-family:system-ui,sans-serif;color:#111">
+    <h1 style="font-size:18px;margin:0 0 4px">Service teams</h1>
+    <p style="font-size:12px;color:#555;margin:0 0 20px">${escapeHtml(monthLabel)} · PMSS</p>
+    ${blocks || '<p>No teams to export.</p>'}
+  </div>`
 
-  const win = window.open('', '_blank', 'noopener,noreferrer')
-  if (!win) {
-    throw new Error('Pop-up blocked — allow pop-ups to export PDF')
-  }
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  const printWhenReady = () => {
-    win.print()
-  }
-  if (win.document.readyState === 'complete') {
-    setTimeout(printWhenReady, 250)
-  } else {
-    win.onload = () => setTimeout(printWhenReady, 250)
-  }
+  return downloadHtmlDocumentAsPdf(html, {
+    fileName: filename ?? `${exportBasename(monthLabel)}.pdf`,
+  })
 }

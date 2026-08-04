@@ -1,4 +1,5 @@
 import { downloadBlob } from './choirScheduleExport.js'
+import { downloadHtmlDocumentAsPdf } from './bulletinPdf.js'
 
 function escapeCsvCell(value) {
   const s = String(value ?? '')
@@ -144,69 +145,62 @@ export function downloadScheduleExcel(payload, { filename, monthLabel } = {}) {
   downloadBlob(new Blob(['\uFEFF', html], { type: 'application/vnd.ms-excel;charset=utf-8' }), name)
 }
 
-/** Printable PDF via browser print dialog. */
-export function downloadSchedulePdf(payload, { monthLabel } = {}) {
+/** Downloads a real PDF of the full schedule. */
+export async function downloadSchedulePdf(payload, { monthLabel, filename } = {}) {
   const label = monthLabel ?? payload.monthLabel ?? 'Schedule'
   const section = (title, headers, rows) => {
-    const head = headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')
-    const body = rows
-      .map((row) => `<tr>${row.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`)
+    const head = headers
+      .map(
+        (h) =>
+          `<th style="border:1px solid #333;padding:5px 6px;background:#eef2f6;text-align:left">${escapeHtml(h)}</th>`,
+      )
       .join('')
-    return `<section><h2>${escapeHtml(title)}</h2><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></section>`
+    const body = rows
+      .map(
+        (row) =>
+          `<tr>${row
+            .map((c) => `<td style="border:1px solid #333;padding:5px 6px;vertical-align:top">${escapeHtml(c)}</td>`)
+            .join('')}</tr>`,
+      )
+      .join('')
+    return `<section style="margin-bottom:16px"><h2 style="font-size:14px;margin:16px 0 8px">${escapeHtml(title)}</h2><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></section>`
   }
 
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Schedule PDF</title>
-<style>
-  body { font-family: system-ui, sans-serif; padding: 24px; color: #111; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  p.sub { font-size: 12px; color: #555; margin: 0 0 20px; }
-  h2 { font-size: 14px; margin: 20px 0 8px; }
-  table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 8px; }
-  th, td { border: 1px solid #333; padding: 5px 6px; text-align: left; vertical-align: top; }
-  th { background: #eef2f6; }
-  @media print { body { padding: 12px; } }
-</style></head>
-<body>
-  <h1>Protocol schedule</h1>
-  <p class="sub">${escapeHtml(label)} · PMSS</p>
-  ${section(
-    'Services',
-    ['Date', 'Name', 'Day', 'Status'],
-    servicesRows(payload).map((r) => [r.date, r.name, r.day, r.status]),
-  )}
-  ${section(
-    'Choir assignments',
-    ['Date', 'Service', 'Choirs', 'Status'],
-    choirRows(payload).map((r) => [r.date, r.service, r.choirs, r.status]),
-  )}
-  ${section(
-    'Service teams',
-    ['Date', 'Service', 'Kind', 'Size', 'TL', 'VTL', 'Members'],
-    teamRows(payload).map((r) => [
-      r.date,
-      r.service,
-      r.kind,
-      r.size,
-      r.teamLeader,
-      r.viceTeamLeader,
-      r.members,
-    ]),
-  )}
-  ${section(
-    'Leadership review',
-    ['Date', 'TL', 'VTL', 'Status'],
-    leadershipRows(payload).map((r) => [r.date, r.tl, r.vtl, r.status]),
-  )}
-</body></html>`
+  const html = `
+  <div style="font-family:system-ui,sans-serif;color:#111">
+    <h1 style="font-size:18px;margin:0 0 4px">Protocol schedule</h1>
+    <p style="font-size:12px;color:#555;margin:0 0 12px">${escapeHtml(label)} · PMSS</p>
+    ${section(
+      'Services',
+      ['Date', 'Name', 'Day', 'Status'],
+      servicesRows(payload).map((r) => [r.date, r.name, r.day, r.status]),
+    )}
+    ${section(
+      'Choir assignments',
+      ['Date', 'Service', 'Choirs', 'Status'],
+      choirRows(payload).map((r) => [r.date, r.service, r.choirs, r.status]),
+    )}
+    ${section(
+      'Service teams',
+      ['Date', 'Service', 'Kind', 'Size', 'TL', 'VTL', 'Members'],
+      teamRows(payload).map((r) => [
+        r.date,
+        r.service,
+        r.kind,
+        r.size,
+        r.teamLeader,
+        r.viceTeamLeader,
+        r.members,
+      ]),
+    )}
+    ${section(
+      'Leadership review',
+      ['Date', 'TL', 'VTL', 'Status'],
+      leadershipRows(payload).map((r) => [r.date, r.tl, r.vtl, r.status]),
+    )}
+  </div>`
 
-  const win = window.open('', '_blank', 'noopener,noreferrer')
-  if (!win) throw new Error('Pop-up blocked — allow pop-ups to export PDF')
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  const printWhenReady = () => win.print()
-  if (win.document.readyState === 'complete') setTimeout(printWhenReady, 250)
-  else win.onload = () => setTimeout(printWhenReady, 250)
+  return downloadHtmlDocumentAsPdf(html, {
+    fileName: filename ?? `${exportBasename(label)}.pdf`,
+  })
 }

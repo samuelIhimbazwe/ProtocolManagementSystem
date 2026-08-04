@@ -1,4 +1,5 @@
 import { parseChoirList } from '../components/ChoirCardActions'
+import { downloadHtmlDocumentAsPdf } from './bulletinPdf.js'
 
 function escapeCsvCell(value) {
   const s = String(value ?? '')
@@ -89,9 +90,9 @@ export function downloadChoirScheduleExcel(
 }
 
 /** Opens the browser print dialog so the user can save as PDF. */
-export function downloadChoirSchedulePdf(
+export async function downloadChoirSchedulePdf(
   assignments,
-  { monthLabel = 'August 2026' } = {},
+  { monthLabel = 'August 2026', filename } = {},
 ) {
   const rows = buildChoirExportRows(assignments)
   const tableRows = rows
@@ -101,40 +102,22 @@ export function downloadChoirSchedulePdf(
     )
     .join('')
 
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Choir Schedule PDF</title>
-<style>
-  body { font-family: system-ui, sans-serif; padding: 24px; color: #111; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  p.sub { font-size: 12px; color: #555; margin: 0 0 20px; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { border: 1px solid #333; padding: 6px 8px; text-align: left; vertical-align: top; }
-  th { background: #eef2f6; }
-  @media print { body { padding: 12px; } }
-</style></head>
-<body>
-  <h1>Choir schedule</h1>
-  <p class="sub">${escapeHtml(monthLabel)} · PMSS</p>
-  <table>
-    <thead><tr><th>Date</th><th>Service</th><th>Status</th><th>Choirs</th></tr></thead>
-    <tbody>${tableRows}</tbody>
-  </table>
-</body></html>`
+  const html = `
+  <div style="font-family:system-ui,sans-serif;color:#111">
+    <h1 style="font-size:18px;margin:0 0 4px">Choir schedule</h1>
+    <p style="font-size:12px;color:#555;margin:0 0 20px">${escapeHtml(monthLabel)} · PMSS</p>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr>
+        <th style="border:1px solid #333;padding:6px 8px;background:#eef2f6;text-align:left">Date</th>
+        <th style="border:1px solid #333;padding:6px 8px;background:#eef2f6;text-align:left">Service</th>
+        <th style="border:1px solid #333;padding:6px 8px;background:#eef2f6;text-align:left">Status</th>
+        <th style="border:1px solid #333;padding:6px 8px;background:#eef2f6;text-align:left">Choirs</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  </div>`
 
-  const win = window.open('', '_blank', 'noopener,noreferrer')
-  if (!win) {
-    throw new Error('Pop-up blocked — allow pop-ups to export PDF')
-  }
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  const printWhenReady = () => {
-    win.print()
-  }
-  if (win.document.readyState === 'complete') {
-    setTimeout(printWhenReady, 250)
-  } else {
-    win.onload = () => setTimeout(printWhenReady, 250)
-  }
+  return downloadHtmlDocumentAsPdf(html, {
+    fileName: filename ?? `${exportBasename(monthLabel)}.pdf`,
+  })
 }

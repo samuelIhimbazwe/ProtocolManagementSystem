@@ -107,7 +107,7 @@ export default function SchedulingPage() {
     setTimeout(() => setToast(null), 2800)
   }
 
-  const exportSchedule = (formatId) => {
+  const exportSchedule = async (formatId) => {
     try {
       if (formatId === 'csv') {
         downloadScheduleCsv(payload, { monthLabel: payload.monthLabel })
@@ -116,8 +116,8 @@ export default function SchedulingPage() {
         downloadScheduleExcel(payload, { monthLabel: payload.monthLabel })
         showToast('Schedule downloaded (Excel)')
       } else if (formatId === 'pdf') {
-        downloadSchedulePdf(payload, { monthLabel: payload.monthLabel })
-        showToast('Use Print → Save as PDF')
+        const result = await downloadSchedulePdf(payload, { monthLabel: payload.monthLabel })
+        showToast(`Downloaded ${result?.fileName ?? 'schedule.pdf'}`)
       }
     } catch (err) {
       showToast(err.message ?? 'Download failed')

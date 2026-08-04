@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Download, FileSpreadsheet, FileText, Sheet } from 'lucide-react'
 
 const FORMATS = [
-  { id: 'pdf', label: 'PDF', hint: 'Print / save as PDF', icon: FileText },
+  { id: 'pdf', label: 'PDF', hint: 'Download .pdf file', icon: FileText },
   { id: 'excel', label: 'Excel', hint: '.xls spreadsheet', icon: FileSpreadsheet },
   { id: 'csv', label: 'CSV', hint: 'Comma-separated', icon: Sheet },
 ]
