@@ -110,6 +110,16 @@
     background-color: var(--pmss-surface);
   }
 
+  .pmss-offscreen-export {
+    position: fixed;
+    left: -14000px;
+    top: 0;
+    width: 794px;
+    pointer-events: none;
+    opacity: 0;
+    z-index: -1;
+  }
+
   [data-theme='a'] .pmss-sidebar {
     background: linear-gradient(180deg, rgb(var(--pmss-primary-800)) 0%, rgb(var(--pmss-primary-700)) 55%, #152536 100%);
     border-right: 1px solid rgb(16 42 67 / 0.4);
@@ -1143,10 +1153,24 @@
     background: transparent !important;
     box-shadow: none !important;
   }
+  .pmss-bulletin-week-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .pmss-bulletin-week-col + .pmss-bulletin-week-col {
+    border-top: none !important;
+    border-left: 1px solid #333 !important;
+  }
+  .pmss-bulletin-week-col--blank {
+    display: block !important;
+  }
   aside,
   header,
   nav,
   .pmss-no-print {
     display: none !important;
+  }
+  @page {
+    margin: 10mm 12mm;
   }
 }

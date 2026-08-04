@@ -23,18 +23,4 @@ export function useDisplayFormat(storageKey, defaultFormat = 'cards') {
   return [format, setFormat]
 }
 
-export function printBulletin(elementId) {
-  const el = document.getElementById(elementId)
-  if (!el) {
-    window.print()
-    return
-  }
-  const prev = document.body.innerHTML
-  const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
-    .map((node) => node.outerHTML)
-    .join('')
-  document.body.innerHTML = `${styles}<div class="pmss-print-root">${el.innerHTML}</div>`
-  window.print()
-  document.body.innerHTML = prev
-  window.location.reload()
-}
+export { downloadBulletinPdf as printBulletin } from '../lib/bulletinPdf'
