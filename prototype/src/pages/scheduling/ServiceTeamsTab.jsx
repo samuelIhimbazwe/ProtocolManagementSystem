@@ -6,6 +6,7 @@ import { useDisplayFormat } from '../../hooks/useDisplayFormat'
 import { RefreshCw } from 'lucide-react'
 import { ServiceCard, Badge } from '../../layouts/AppShell'
 import Modal from '../../components/Modal'
+import ScheduleDownloadMenu from '../../components/ScheduleDownloadMenu'
 import TeamCardActions, { normalizeTeam } from '../../components/TeamCardActions'
 import TeamMemberItems from '../../components/TeamMemberItems'
 import { MEMBERS, SERVICES, TEAM_ASSIGNMENTS } from '../../data/mock'
@@ -16,6 +17,11 @@ import {
   maxTeamSizeForRow,
   minTeamSizeForRow,
 } from '../../data/teamEngine'
+import {
+  downloadServiceTeamsCsv,
+  downloadServiceTeamsExcel,
+  downloadServiceTeamsPdf,
+} from '../../lib/serviceTeamsExport'
 
 function teamKey(t) {
   return t.serviceId ?? t.date
@@ -124,6 +130,27 @@ export default function ServiceTeamsTab({
 
   const handleAction = (index, actionId) => openModal(index, actionId)
 
+  const exportTeams = (formatId) => {
+    if (!teams.length) {
+      showToast('No teams to download')
+      return
+    }
+    try {
+      if (formatId === 'csv') {
+        downloadServiceTeamsCsv(teams, { monthLabel })
+        showToast('Service teams downloaded (CSV)')
+      } else if (formatId === 'excel') {
+        downloadServiceTeamsExcel(teams, { monthLabel })
+        showToast('Service teams downloaded (Excel)')
+      } else if (formatId === 'pdf') {
+        downloadServiceTeamsPdf(teams, { monthLabel })
+        showToast('Use Print → Save as PDF')
+      }
+    } catch (err) {
+      showToast(err.message ?? 'Download failed')
+    }
+  }
+
   const saveAdd = () => {
     const team = teams[modal.index]
     if (!pickMember) {
@@ -199,6 +226,11 @@ export default function ServiceTeamsTab({
             </button>
           </>
         )}
+        <ScheduleDownloadMenu
+          label="Download teams"
+          onExport={exportTeams}
+          disabled={!teams.length}
+        />
       </div>
 
       {format === 'bulletin' ? (

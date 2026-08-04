@@ -45,10 +45,6 @@ export const SERVING_SCRIPTURES = [
     reference: 'Acts 20:35',
   },
   {
-    text: 'Let us not become weary in doing good, for at the proper time we will reap a harvest if we do not give up.',
-    reference: 'Galatians 6:9',
-  },
-  {
     text: 'And whatever you do, whether in word or deed, do it all in the name of the Lord Jesus, giving thanks to God the Father through him.',
     reference: 'Colossians 3:17',
   },
@@ -67,8 +63,8 @@ function shuffle(list) {
   return copy
 }
 
-/** Pick distinct primary / secondary verses for one page load. */
+/** Pick one verse for the login brand panel on each load. */
 export function pickServingScriptures() {
-  const [primary, secondary] = shuffle(SERVING_SCRIPTURES)
-  return { primary, secondary }
+  const [primary] = shuffle(SERVING_SCRIPTURES)
+  return { primary }
 }

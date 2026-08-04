@@ -12,19 +12,24 @@ import {
   RefreshCw,
   Check,
   Shuffle,
-  FileDown,
   Archive,
 } from 'lucide-react'
 import { PageHeader, DataTable, Badge } from '../layouts/AppShell'
 import { useRole } from '../context/RoleContext'
 import { useSchedule } from '../context/ScheduleContext'
 import { USE_API } from '../api/config'
-import { publishSchedule } from '../api/client'
-import { fetchScheduleHistory } from '../api/schedule'
+import { publishSchedule, archiveSchedule } from '../api/client'
+import { fetchScheduleHistory, saveScheduleDraft } from '../api/schedule'
 import { PUBLISH_INFO, SCHEDULE_HISTORY } from '../data/mock'
 import { normalizeTeam } from '../components/TeamCardActions'
+import ScheduleDownloadMenu from '../components/ScheduleDownloadMenu'
 import ChoirScheduleTab from './scheduling/ChoirScheduleTab'
 import ServiceTeamsTab from './scheduling/ServiceTeamsTab'
+import {
+  downloadScheduleCsv,
+  downloadScheduleExcel,
+  downloadSchedulePdf,
+} from '../lib/scheduleExport'
 
 const TABS = [
   { id: 'calendar', label: 'Calendar', icon: Calendar },
@@ -89,6 +94,84 @@ export default function SchedulingPage() {
   const [toast, setToast] = useState(null)
   const [historyRows, setHistoryRows] = useState(SCHEDULE_HISTORY)
   const [publishMeta, setPublishMeta] = useState(PUBLISH_INFO)
+  const [publishing, setPublishing] = useState(false)
+  const [archiving, setArchiving] = useState(false)
+
+  const selectTab = (id) => {
+    setTab(id)
+    setSearchParams({ tab: id })
+  }
+
+  const showToast = (msg) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2800)
+  }
+
+  const exportSchedule = (formatId) => {
+    try {
+      if (formatId === 'csv') {
+        downloadScheduleCsv(payload, { monthLabel: payload.monthLabel })
+        showToast('Schedule downloaded (CSV)')
+      } else if (formatId === 'excel') {
+        downloadScheduleExcel(payload, { monthLabel: payload.monthLabel })
+        showToast('Schedule downloaded (Excel)')
+      } else if (formatId === 'pdf') {
+        downloadSchedulePdf(payload, { monthLabel: payload.monthLabel })
+        showToast('Use Print → Save as PDF')
+      }
+    } catch (err) {
+      showToast(err.message ?? 'Download failed')
+    }
+  }
+
+  const handlePublish = async () => {
+    if (USE_API) {
+      setPublishing(true)
+      try {
+        // Flush any pending draft edits before publish
+        await saveScheduleDraft(payload)
+        const result = await publishSchedule()
+        showToast(`Schedule published ${result.versionLabel}`)
+        setPublishMeta({
+          status: 'Published',
+          version: result.versionLabel,
+          publishedBy: result.publishedBy ?? publishMeta.publishedBy,
+          publishedDate: new Date(result.publishedAt).toLocaleDateString(),
+        })
+        await refresh()
+        selectTab('history')
+      } catch (err) {
+        showToast(err.message ?? 'Publish failed')
+      } finally {
+        setPublishing(false)
+      }
+      return
+    }
+    showToast('Schedule published successfully')
+    setPublishMeta((prev) => ({ ...prev, status: 'Published' }))
+    selectTab('history')
+  }
+
+  const handleArchive = async () => {
+    if (USE_API) {
+      setArchiving(true)
+      try {
+        const result = await archiveSchedule()
+        showToast(`Archived ${result.versionLabel}`)
+        setPublishMeta((prev) => ({ ...prev, status: 'Archived' }))
+        await refresh()
+        selectTab('history')
+      } catch (err) {
+        showToast(err.message ?? 'Archive failed')
+      } finally {
+        setArchiving(false)
+      }
+      return
+    }
+    showToast('Schedule archived')
+    setPublishMeta((prev) => ({ ...prev, status: 'Archived' }))
+    selectTab('history')
+  }
 
   useEffect(() => {
     if (!USE_API || tab !== 'history') return
@@ -112,16 +195,6 @@ export default function SchedulingPage() {
     if (tabParam && allowed.includes(tabParam)) setTab(tabParam)
     else if (!allowed.includes(tab)) setTab(allowed[0] ?? 'calendar')
   }, [tabParam, permissions.schedulingTabs, tab])
-
-  const selectTab = (id) => {
-    setTab(id)
-    setSearchParams({ tab: id })
-  }
-
-  const showToast = (msg) => {
-    setToast(msg)
-    setTimeout(() => setToast(null), 2800)
-  }
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -333,38 +406,27 @@ export default function SchedulingPage() {
             <button
               type="button"
               className="pmss-btn-primary w-full"
-              onClick={async () => {
-                if (USE_API) {
-                  try {
-                    const result = await publishSchedule()
-                    showToast(`Schedule published ${result.versionLabel}`)
-                    setPublishMeta({
-                      status: 'Published',
-                      version: result.versionLabel,
-                      publishedBy: result.publishedBy ?? publishMeta.publishedBy,
-                      publishedDate: new Date(result.publishedAt).toLocaleDateString(),
-                    })
-                    await refresh()
-                  } catch (err) {
-                    showToast(err.message ?? 'Publish failed')
-                    return
-                  }
-                } else {
-                  showToast('Schedule published successfully')
-                }
-                selectTab('history')
-              }}
+              onClick={handlePublish}
+              disabled={publishing}
             >
-              Publish schedule
+              {publishing ? 'Publishing…' : 'Publish schedule'}
             </button>
-            <button type="button" className="pmss-btn-secondary w-full">
-              <Archive className="w-4 h-4" /> Archive schedule
+            <button
+              type="button"
+              className="pmss-btn-secondary w-full"
+              onClick={handleArchive}
+              disabled={archiving}
+            >
+              <Archive className="w-4 h-4" />
+              {archiving ? 'Archiving…' : 'Archive schedule'}
             </button>
             </>
             ) : null}
-            <button type="button" className="pmss-btn-secondary w-full">
-              <FileDown className="w-4 h-4" /> Download PDF
-            </button>
+            <ScheduleDownloadMenu
+              label="Download schedule"
+              onExport={exportSchedule}
+              disabled={!services.length}
+            />
           </div>
         </div>
       )}
@@ -378,12 +440,13 @@ export default function SchedulingPage() {
             { key: 'changes', label: 'Changes' },
             {
               key: 'actions',
-              label: 'Actions',
-              render: () => (
-                <span className="text-primary-600 text-xs font-medium">
-                  View · Restore
-                </span>
-              ),
+              label: 'Status',
+              render: (row) =>
+                row.archived ? (
+                  <Badge variant="neutral">Archived</Badge>
+                ) : (
+                  <Badge variant="success">Published</Badge>
+                ),
             },
           ]}
           rows={historyRows}

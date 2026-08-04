@@ -46,7 +46,11 @@ export async function saveRules(rules) {
 }
 
 export async function inviteUser(body) {
-  return apiFetch('/users', { method: 'POST', body })
+  return apiFetch('/users', { method: 'POST', body: { ...body, mode: body.mode ?? 'invite' } })
+}
+
+export async function createUser(body) {
+  return apiFetch('/users', { method: 'POST', body: { ...body, mode: 'create' } })
 }
 
 export async function patchUser(id, body) {

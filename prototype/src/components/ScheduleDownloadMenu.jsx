@@ -7,7 +7,7 @@ const FORMATS = [
   { id: 'csv', label: 'CSV', hint: 'Comma-separated', icon: Sheet },
 ]
 
-export default function ScheduleDownloadMenu({ onExport, disabled, label = 'Download schedule' }) {
+export default function ScheduleDownloadMenu({ onExport, disabled, label = 'Download schedule', className = '' }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 
@@ -21,10 +21,10 @@ export default function ScheduleDownloadMenu({ onExport, disabled, label = 'Down
   }, [open])
 
   return (
-    <div className="relative" ref={rootRef}>
+    <div className={`relative ${className}`} ref={rootRef}>
       <button
         type="button"
-        className="pmss-btn-secondary inline-flex items-center gap-2"
+        className="pmss-btn-secondary inline-flex items-center gap-2 w-full justify-center"
         disabled={disabled}
         aria-expanded={open}
         aria-haspopup="menu"

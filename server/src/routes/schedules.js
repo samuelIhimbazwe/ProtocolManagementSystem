@@ -14,6 +14,14 @@ async function getDraft() {
 }
 
 async function getLatestPublished() {
+  const active = await db
+    .prepare(
+      `SELECT * FROM schedule_versions
+       WHERE status = 'published' AND (archived_at IS NULL OR archived_at = '')
+       ORDER BY published_at DESC LIMIT 1`,
+    )
+    .get()
+  if (active) return active
   return await db
     .prepare(
       `SELECT * FROM schedule_versions WHERE status = 'published' ORDER BY published_at DESC LIMIT 1`,
@@ -205,6 +213,41 @@ router.post('/publish', authMiddleware, async (req, res) => {
   })
 })
 
+router.post('/archive', authMiddleware, async (req, res) => {
+  if (req.auth.role !== 'coordinator') {
+    return res.status(403).json({ error: 'Only coordinator can archive' })
+  }
+
+  const latest = await db
+    .prepare(
+      `SELECT * FROM schedule_versions
+       WHERE status = 'published' AND (archived_at IS NULL OR archived_at = '')
+       ORDER BY published_at DESC LIMIT 1`,
+    )
+    .get()
+
+  if (!latest) {
+    return res.status(404).json({ error: 'No published schedule to archive' })
+  }
+
+  await db
+    .prepare(`UPDATE schedule_versions SET archived_at = datetime('now') WHERE id = ?`)
+    .run(latest.id)
+
+  await audit('schedule.archive', req.auth.sub, {
+    versionLabel: latest.version_label,
+    monthKey: latest.month_key,
+    publishedId: latest.id,
+    summary: `Schedule ${latest.version_label} archived`,
+  })
+
+  return res.json({
+    ok: true,
+    archivedId: latest.id,
+    versionLabel: latest.version_label,
+  })
+})
+
 router.get('/published/latest', authMiddleware, async (req, res) => {
   const row = await getLatestPublished()
   if (!row) {
@@ -224,7 +267,8 @@ router.get('/published/latest', authMiddleware, async (req, res) => {
 router.get('/history', authMiddleware, async (req, res) => {
   const rows = await db
     .prepare(
-      `SELECT sv.id, sv.version_label, sv.month_key, sv.published_at, sv.published_by_user_id, u.display_name
+      `SELECT sv.id, sv.version_label, sv.month_key, sv.published_at, sv.archived_at,
+        sv.published_by_user_id, u.display_name
        FROM schedule_versions sv
        LEFT JOIN users u ON u.id = sv.published_by_user_id
        WHERE sv.status = 'published' ORDER BY sv.published_at DESC LIMIT 20`,
@@ -236,7 +280,10 @@ router.get('/history', authMiddleware, async (req, res) => {
       version: r.version_label,
       date: r.published_at,
       by: r.display_name ?? '—',
-      changes: `Published ${r.month_key} schedule`,
+      changes: r.archived_at
+        ? `Archived ${r.month_key} schedule`
+        : `Published ${r.month_key} schedule`,
+      archived: Boolean(r.archived_at),
     })),
   })
 })
