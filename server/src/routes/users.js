@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { v4 as uuid } from 'uuid'
 import { db, audit } from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
+import { sendInviteEmail } from '../lib/mail.js'
 
 const router = Router()
 
@@ -66,9 +67,21 @@ router.post('/', authMiddleware, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden' })
   }
 
-  const { memberId, appRole, username, email, displayName } = req.body ?? {}
+  const { memberId, appRole, username, email, displayName, password, mode } = req.body ?? {}
   if (!memberId || !appRole) {
     return res.status(400).json({ error: 'memberId and appRole required' })
+  }
+
+  const createActive = mode === 'create'
+  if (createActive) {
+    if (!password || String(password).length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' })
+    }
+  } else {
+    const inviteEmail = String(email ?? '').trim()
+    if (!inviteEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail)) {
+      return res.status(400).json({ error: 'A valid invite email is required' })
+    }
   }
 
   const member = await db.prepare(`SELECT * FROM members WHERE id = ?`).get(String(memberId))
@@ -78,27 +91,54 @@ router.post('/', authMiddleware, async (req, res) => {
   if (existing) return res.status(400).json({ error: 'Member already has an account' })
 
   const un = username?.trim() || usernameFromName(member.name)
-  const em = email?.trim() || `${un}@church.internal`
+  const em = String(email ?? '').trim() || (createActive ? `${un}@church.internal` : '')
+  if (!em) {
+    return res.status(400).json({ error: 'A valid invite email is required' })
+  }
   const name = displayName?.trim() || member.name
 
   const dup = await db.prepare(`SELECT id FROM users WHERE username = ? COLLATE NOCASE`).get(un)
   if (dup) return res.status(400).json({ error: 'Username already taken' })
 
-  const tempPassword = `Invite-${uuid().slice(0, 8)}!`
-  const hash = await bcrypt.hash(tempPassword, 10)
+  const tempPassword = createActive ? null : `Invite-${uuid().slice(0, 8)}!`
+  const plainPassword = createActive ? String(password) : tempPassword
+  const hash = await bcrypt.hash(plainPassword, 10)
   const id = uuid()
+  const status = createActive ? 'Active' : 'Invited'
 
-  await db.prepare(
-    `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status, invited_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'Invited', datetime('now'))`,
-  ).run(id, un, em, hash, String(memberId), name, appRole)
+  await db
+    .prepare(
+      createActive
+        ? `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status, invited_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+        : `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status, invited_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    )
+    .run(id, un, em, hash, String(memberId), name, appRole, status)
 
-  await audit('users.invite', req.auth.sub, { userId: id, memberId })
+  let inviteMail = null
+  if (!createActive) {
+    inviteMail = await sendInviteEmail({
+      to: em,
+      displayName: name,
+      username: un,
+      tempPassword,
+    })
+  }
+
+  await audit(createActive ? 'users.create' : 'users.invite', req.auth.sub, {
+    userId: id,
+    memberId,
+    email: em,
+  })
 
   const row = await db.prepare(`SELECT * FROM users WHERE id = ?`).get(id)
-  const body = { user: publicUser(row) }
-  if (process.env.NODE_ENV !== 'production') {
-    body.demoTempPassword = tempPassword
+  const body = { user: publicUser(row), inviteEmail: em }
+  if (!createActive) {
+    body.inviteQueued = Boolean(inviteMail?.queued)
+    if (process.env.NODE_ENV !== 'production') {
+      body.demoTempPassword = tempPassword
+    }
   }
   return res.status(201).json(body)
 })

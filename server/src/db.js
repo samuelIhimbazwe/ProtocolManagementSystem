@@ -571,6 +571,7 @@ export async function initSchema() {
   await ensureColumn('contribution_submissions', 'evidence_file_name', 'TEXT')
   await ensureColumn('contribution_submissions', 'evidence_file_mime', 'TEXT')
   await ensureColumn('contribution_submissions', 'evidence_file_path', 'TEXT')
+  await ensureColumn('schedule_versions', 'archived_at', 'TEXT')
 }
 
 async function ensureColumn(table, column, typeSql) {

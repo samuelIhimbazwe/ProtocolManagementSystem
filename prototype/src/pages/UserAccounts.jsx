@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { KeyRound, MailPlus, UserCheck, UserX } from 'lucide-react'
+import { KeyRound, MailPlus, UserPlus, UserCheck, UserX } from 'lucide-react'
 import { PageHeader, DataTable, Badge } from '../layouts/AppShell'
 import Modal from '../components/Modal'
 import MembersSubnav from '../components/MembersSubnav'
@@ -12,11 +12,11 @@ import {
   saveUserAccounts,
   appRoleLabel,
   membersWithoutAccount,
-  memberLabel,
+  suggestUsername,
 } from '../data/userAccounts'
 import { USE_API } from '../api/config'
 import { fetchUserAccounts } from '../api/client'
-import { inviteUser, patchUser } from '../api/schedule'
+import { inviteUser, createUser, patchUser, fetchMembers } from '../api/schedule'
 
 function mapApiUser(u) {
   return {
@@ -32,10 +32,29 @@ function mapApiUser(u) {
   }
 }
 
+function mapApiMember(m) {
+  return {
+    id: String(m.id),
+    name: m.name,
+    role: m.role,
+  }
+}
+
 function statusVariant(status) {
   if (status === 'Active') return 'success'
   if (status === 'Invited') return 'warning'
   return 'neutral'
+}
+
+function emptyForm() {
+  return {
+    memberId: '',
+    username: '',
+    email: '',
+    appRole: 'member',
+    password: '',
+    confirmPassword: '',
+  }
 }
 
 export default function UserAccountsPage() {
@@ -43,19 +62,37 @@ export default function UserAccountsPage() {
   const canManage = permissions.manageUsers
 
   const [accounts, setAccounts] = useState(() => (USE_API ? [] : loadUserAccounts()))
+  const [roster, setRoster] = useState(() => (USE_API ? [] : MEMBERS))
   const [accountsLoading, setAccountsLoading] = useState(USE_API)
   const [accountsError, setAccountsError] = useState(null)
   const [search, setSearch] = useState('')
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteMemberId, setInviteMemberId] = useState('')
-  const [inviteRole, setInviteRole] = useState('member')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [form, setForm] = useState(emptyForm)
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
   const [toast, setToast] = useState(null)
 
-  const availableMembers = useMemo(() => membersWithoutAccount(accounts), [accounts])
+  const availableMembers = useMemo(() => membersWithoutAccount(accounts, roster), [accounts, roster])
 
   const showToast = (msg) => {
     setToast(msg)
-    setTimeout(() => setToast(null), 2600)
+    setTimeout(() => setToast(null), 3200)
+  }
+
+  const setField = (key, value) => setForm((f) => ({ ...f, [key]: value }))
+
+  const applyMemberDefaults = (memberId, { clearEmail = false } = {}) => {
+    const member = roster.find((m) => m.id === memberId)
+    if (!member) return
+    const username = suggestUsername(member.name)
+    setForm((f) => ({
+      ...f,
+      memberId,
+      username,
+      email: clearEmail ? '' : `${username}@church.internal`,
+      appRole: member.role === 'Member' ? 'member' : ROLES.find((r) => r.label === member.role)?.id ?? 'member',
+    }))
   }
 
   const reloadAccounts = () => {
@@ -72,7 +109,14 @@ export default function UserAccountsPage() {
     if (!USE_API) return
     let cancelled = false
     setAccountsLoading(true)
-    reloadAccounts()
+    Promise.all([reloadAccounts(), fetchMembers()])
+      .then(([, membersData]) => {
+        if (cancelled) return
+        setRoster((membersData.members ?? []).map(mapApiMember))
+      })
+      .catch((err) => {
+        if (!cancelled) setAccountsError(err.message ?? 'Could not load accounts')
+      })
       .finally(() => {
         if (!cancelled) setAccountsLoading(false)
       })
@@ -100,48 +144,150 @@ export default function UserAccountsPage() {
 
   const openInvite = () => {
     const first = availableMembers[0]
-    setInviteMemberId(first?.id ?? '')
-    setInviteRole(first?.role === 'Member' ? 'member' : ROLES.find((r) => r.label === first?.role)?.id ?? 'member')
+    setFormError('')
+    if (first) {
+      const username = suggestUsername(first.name)
+      setForm({
+        memberId: first.id,
+        username,
+        email: '',
+        appRole: first.role === 'Member' ? 'member' : ROLES.find((r) => r.label === first.role)?.id ?? 'member',
+        password: '',
+        confirmPassword: '',
+      })
+    } else {
+      setForm(emptyForm())
+    }
     setInviteOpen(true)
   }
 
+  const openCreate = () => {
+    const first = availableMembers[0]
+    setFormError('')
+    if (first) {
+      const username = suggestUsername(first.name)
+      setForm({
+        memberId: first.id,
+        username,
+        email: `${username}@church.internal`,
+        appRole: first.role === 'Member' ? 'member' : ROLES.find((r) => r.label === first.role)?.id ?? 'member',
+        password: '',
+        confirmPassword: '',
+      })
+    } else {
+      setForm(emptyForm())
+    }
+    setCreateOpen(true)
+  }
+
+  const onMemberChange = (memberId, { forInvite = false } = {}) => {
+    applyMemberDefaults(memberId, { clearEmail: forInvite })
+  }
+
+  const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim())
+
   const submitInvite = async () => {
-    const member = MEMBERS.find((m) => m.id === inviteMemberId)
+    const member = roster.find((m) => m.id === form.memberId)
     if (!member) return
-    if (USE_API) {
-      try {
-        const res = await inviteUser({ memberId: member.id, appRole: inviteRole })
-        await reloadAccounts()
-        showToast(
-          res.demoTempPassword
-            ? `Invite created for ${member.name}. Temporary password: ${res.demoTempPassword}`
-            : `Invite sent to ${member.name}`,
-        )
-        setInviteOpen(false)
-      } catch (err) {
-        showToast(err.message ?? 'Invite failed')
-      }
+    if (!form.username.trim()) {
+      setFormError('Username is required')
       return
     }
-    const parts = member.name.toLowerCase().split(/\s+/).filter(Boolean)
-    const un =
-      parts.length >= 2
-        ? `${parts[0][0]}.${parts[parts.length - 1]}`.replace(/[^a-z.]/g, '')
-        : 'new.user'
-    const newAccount = {
-      id: `u-new-${Date.now()}`,
-      username: un,
-      email: `${un}@church.internal`,
-      memberId: member.id,
-      displayName: member.name,
-      appRole: inviteRole,
-      status: 'Invited',
-      lastLogin: null,
-      invitedAt: new Date().toISOString().slice(0, 10),
+    if (!isValidEmail(form.email)) {
+      setFormError('Enter the email address where the invite should be sent')
+      return
     }
-    persist([...accounts, newAccount])
-    showToast(`Invite sent to ${member.name}`)
-    setInviteOpen(false)
+    setSubmitting(true)
+    setFormError('')
+    const inviteEmail = form.email.trim()
+    try {
+      if (USE_API) {
+        const res = await inviteUser({
+          memberId: member.id,
+          appRole: form.appRole,
+          username: form.username.trim(),
+          email: inviteEmail,
+          mode: 'invite',
+        })
+        await reloadAccounts()
+        const dest = res.inviteEmail || inviteEmail
+        showToast(
+          res.demoTempPassword
+            ? `Invite queued for ${dest}. Temporary password: ${res.demoTempPassword}`
+            : `Invite queued for ${dest}`,
+        )
+      } else {
+        const newAccount = {
+          id: `u-new-${Date.now()}`,
+          username: form.username.trim(),
+          email: inviteEmail,
+          memberId: member.id,
+          displayName: member.name,
+          appRole: form.appRole,
+          status: 'Invited',
+          lastLogin: null,
+          invitedAt: new Date().toISOString().slice(0, 10),
+        }
+        persist([...accounts, newAccount])
+        showToast(`Invite queued for ${inviteEmail}`)
+      }
+      setInviteOpen(false)
+    } catch (err) {
+      setFormError(err.message ?? 'Invite failed')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const submitCreate = async () => {
+    const member = roster.find((m) => m.id === form.memberId)
+    if (!member) return
+    if (!form.username.trim()) {
+      setFormError('Username is required')
+      return
+    }
+    if (form.password.length < 8) {
+      setFormError('Password must be at least 8 characters')
+      return
+    }
+    if (form.password !== form.confirmPassword) {
+      setFormError('Passwords do not match')
+      return
+    }
+    setSubmitting(true)
+    setFormError('')
+    try {
+      if (USE_API) {
+        await createUser({
+          memberId: member.id,
+          appRole: form.appRole,
+          username: form.username.trim(),
+          email: form.email.trim(),
+          password: form.password,
+          mode: 'create',
+        })
+        await reloadAccounts()
+      } else {
+        const newAccount = {
+          id: `u-new-${Date.now()}`,
+          username: form.username.trim(),
+          email: form.email.trim() || `${form.username.trim()}@church.internal`,
+          memberId: member.id,
+          displayName: member.name,
+          appRole: form.appRole,
+          status: 'Active',
+          lastLogin: null,
+          invitedAt: null,
+        }
+        persist([...accounts, newAccount])
+      }
+      showToast(`Account created for ${member.name}`)
+      setCreateOpen(false)
+    } catch (err) {
+      setFormError(err.message ?? 'Could not create user')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const setStatus = async (id, status) => {
@@ -170,11 +316,11 @@ export default function UserAccountsPage() {
   }
 
   const sendReset = (account) => {
-    showToast(`Use Forgot password on login — reset link for ${account.username} (dev: POST /auth/forgot-password)`)
+    showToast(`Password reset: use Forgot password on the login page for ${account.username}`)
   }
 
   const resendInvite = (account) => {
-    showToast(`Invite pending for ${account.email}`)
+    showToast(`Invite remains pending for ${account.username}`)
   }
 
   const columns = [
@@ -215,41 +361,113 @@ export default function UserAccountsPage() {
     },
   ]
 
+  const memberFields = ({ forInvite = false } = {}) => (
+    <>
+      <div>
+        <label className="block text-sm font-medium text-neutral-700 mb-1.5">Roster member</label>
+        <select
+          className="pmss-input"
+          value={form.memberId}
+          onChange={(e) => onMemberChange(e.target.value, { forInvite })}
+        >
+          {availableMembers.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name} ({m.role})
+            </option>
+          ))}
+        </select>
+      </div>
+      {forInvite ? (
+        <div>
+          <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+            Invite email <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="email"
+            className="pmss-input"
+            value={form.email}
+            onChange={(e) => setField('email', e.target.value)}
+            autoComplete="email"
+            placeholder="name@example.com"
+            required
+          />
+          <p className="text-xs text-neutral-500 mt-1.5">
+            The invite (username and temporary password) will be sent to this address.
+          </p>
+        </div>
+      ) : null}
+      <div className={`grid grid-cols-1 ${forInvite ? '' : 'sm:grid-cols-2'} gap-3`}>
+        <div>
+          <label className="block text-sm font-medium text-neutral-700 mb-1.5">Username</label>
+          <input
+            className="pmss-input"
+            value={form.username}
+            onChange={(e) => setField('username', e.target.value)}
+            autoComplete="off"
+          />
+        </div>
+        {!forInvite && (
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">Email</label>
+            <input
+              type="email"
+              className="pmss-input"
+              value={form.email}
+              onChange={(e) => setField('email', e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+        )}
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-neutral-700 mb-1.5">App role</label>
+        <select className="pmss-input" value={form.appRole} onChange={(e) => setField('appRole', e.target.value)}>
+          {ROLES.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    </>
+  )
+
   return (
     <div className="max-w-7xl mx-auto">
       <MembersSubnav />
 
       <PageHeader
         title="User accounts"
-        description="PMSS login accounts linked to ministry members — invite, deactivate, and password reset"
+        description="Create or invite login accounts linked to the ministry roster"
         actions={
           canManage ? (
-            <button
-              type="button"
-              className="pmss-btn-primary"
-              onClick={openInvite}
-              disabled={availableMembers.length === 0}
-            >
-              <MailPlus className="w-4 h-4" /> Invite user
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="pmss-btn-secondary"
+                onClick={openInvite}
+                disabled={availableMembers.length === 0}
+              >
+                <MailPlus className="w-4 h-4" /> Invite user
+              </button>
+              <button
+                type="button"
+                className="pmss-btn-primary"
+                onClick={openCreate}
+                disabled={availableMembers.length === 0}
+              >
+                <UserPlus className="w-4 h-4" /> Create user
+              </button>
+            </div>
           ) : null
         }
       />
 
-      {USE_API && (
-        <p className="text-sm text-neutral-600 mb-4 pmss-card p-4 border-l-4 border-primary-500">
-          Pilot API — accounts sync with the server. Invite and deactivate update{' '}
-          <code className="text-xs">/users</code> immediately.
-        </p>
-      )}
-
-      {accountsError && (
-        <p className="text-sm text-red-700 mb-4 pmss-card p-4">{accountsError}</p>
-      )}
+      {accountsError && <p className="text-sm text-red-700 mb-4 pmss-card p-4">{accountsError}</p>}
 
       {!canManage && (
         <p className="text-sm text-neutral-500 mb-4 pmss-card p-4">
-          View only — Secretary and Coordinator can invite and manage accounts.
+          View only — Secretary and Coordinator can create, invite, and manage accounts.
         </p>
       )}
 
@@ -261,9 +479,6 @@ export default function UserAccountsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Link to="/login" className="pmss-btn-secondary text-sm inline-flex items-center justify-center">
-          Open sign-in page
-        </Link>
       </div>
 
       {accountsLoading ? (
@@ -324,14 +539,19 @@ export default function UserAccountsPage() {
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         title="Invite user"
-        description="Creates a login linked to a roster member. They receive email to set a password."
+        description="Enter the member’s email so we can send their invite with login details."
         footer={
           <>
             <button type="button" className="pmss-btn-secondary" onClick={() => setInviteOpen(false)}>
               Cancel
             </button>
-            <button type="button" className="pmss-btn-primary" onClick={submitInvite} disabled={!inviteMemberId}>
-              Send invite
+            <button
+              type="button"
+              className="pmss-btn-primary"
+              onClick={submitInvite}
+              disabled={!form.memberId || submitting}
+            >
+              {submitting ? 'Sending…' : 'Send invite'}
             </button>
           </>
         }
@@ -340,32 +560,74 @@ export default function UserAccountsPage() {
           <p className="text-sm text-neutral-600">Every roster member already has an account.</p>
         ) : (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">Roster member</label>
-              <select className="pmss-input" value={inviteMemberId} onChange={(e) => setInviteMemberId(e.target.value)}>
-                {availableMembers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.role})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">App role (permissions)</label>
-              <select className="pmss-input" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-                {ROLES.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <p className="text-xs text-neutral-400">
-              Linked profile: {memberLabel(inviteMemberId)} · Sign-in at{' '}
-              <Link to="/login" className="text-primary-600">
-                /login
-              </Link>
+            {memberFields({ forInvite: true })}
+            {formError && (
+              <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-input px-3 py-2" role="alert">
+                {formError}
+              </p>
+            )}
+            <p className="text-xs text-neutral-500">
+              Linked to {roster.find((m) => m.id === form.memberId)?.name ?? 'selected member'}. In development, the
+              temporary password is also shown after invite.
             </p>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Create user"
+        description="Creates an Active login immediately with a password you set. The member can sign in right away."
+        footer={
+          <>
+            <button type="button" className="pmss-btn-secondary" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="pmss-btn-primary"
+              onClick={submitCreate}
+              disabled={!form.memberId || submitting}
+            >
+              {submitting ? 'Creating…' : 'Create account'}
+            </button>
+          </>
+        }
+      >
+        {availableMembers.length === 0 ? (
+          <p className="text-sm text-neutral-600">Every roster member already has an account.</p>
+        ) : (
+          <div className="space-y-4">
+            {memberFields({ forInvite: false })}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Password</label>
+                <input
+                  type="password"
+                  className="pmss-input"
+                  value={form.password}
+                  onChange={(e) => setField('password', e.target.value)}
+                  autoComplete="new-password"
+                  placeholder="At least 8 characters"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Confirm password</label>
+                <input
+                  type="password"
+                  className="pmss-input"
+                  value={form.confirmPassword}
+                  onChange={(e) => setField('confirmPassword', e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+            {formError && (
+              <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-input px-3 py-2" role="alert">
+                {formError}
+              </p>
+            )}
           </div>
         )}
       </Modal>

@@ -146,4 +146,33 @@ router.post('/reset-password', async (req, res) => {
   return res.json({ message: 'Password updated' })
 })
 
+router.post('/change-password', authMiddleware, async (req, res) => {
+  const { currentPassword, newPassword } = req.body ?? {}
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current password and new password required' })
+  }
+  if (String(newPassword).length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters' })
+  }
+  if (String(currentPassword) === String(newPassword)) {
+    return res.status(400).json({ error: 'New password must be different from the current password' })
+  }
+
+  const user = await db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.auth.sub)
+  if (!user || user.status === 'Deactivated') {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const ok = await bcrypt.compare(String(currentPassword), user.password_hash)
+  if (!ok) {
+    return res.status(400).json({ error: 'Current password is incorrect' })
+  }
+
+  const hash = await bcrypt.hash(String(newPassword), 10)
+  await db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(hash, user.id)
+  await audit('auth.change_password', user.id, {})
+
+  return res.json({ message: 'Password updated' })
+})
+
 export default router

@@ -19,7 +19,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [{ primary, secondary }] = useState(() => pickServingScriptures())
+  const [{ primary }] = useState(() => pickServingScriptures())
   const protocolMembers = MEMBERS.filter((m) => m.role === 'Member')
 
   const handleLogin = async (e) => {
@@ -60,10 +60,7 @@ export default function LoginPage() {
             <cite className="pmss-login-scripture-cite">{primary.reference}</cite>
           </div>
 
-          <div className="pmss-login-scripture-secondary">
-            <p className="pmss-login-scripture-line">{secondary.text}</p>
-            <cite className="pmss-login-scripture-cite pmss-login-scripture-cite--soft">{secondary.reference}</cite>
-          </div>
+          <div className="pmss-login-scripture-secondary" aria-hidden />
 
           <div className="pmss-login-brand-foot">
             <div

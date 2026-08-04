@@ -76,7 +76,11 @@ export function appRoleLabel(appRole) {
   return ROLES.find((r) => r.id === appRole)?.label ?? appRole
 }
 
-export function membersWithoutAccount(accounts) {
+export function membersWithoutAccount(accounts, roster = MEMBERS) {
   const linked = new Set(accounts.map((a) => a.memberId))
-  return MEMBERS.filter((m) => !linked.has(m.id))
+  return roster.filter((m) => !linked.has(m.id))
+}
+
+export function suggestUsername(name) {
+  return usernameFromName(name)
 }
