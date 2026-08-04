@@ -28,6 +28,7 @@ const EXTRA_PAGES = [
   { to: '/activity', label: 'Recent activity', keywords: 'audit log history events', icon: Activity },
   { to: '/notifications', label: 'Notifications', keywords: 'alerts bell unread', icon: Bell },
   { to: '/members/accounts', label: 'User accounts', keywords: 'login invite password users', icon: KeyRound },
+  { to: '/settings#change-password', label: 'Change password', keywords: 'password security account', icon: KeyRound },
   { to: '/attendance/record', label: 'Record attendance', keywords: 'roll call present absent', icon: ClipboardCheck },
   {
     to: '/scheduling?tab=calendar',

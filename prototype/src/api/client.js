@@ -84,8 +84,19 @@ export async function resetPassword(token, password) {
   return apiFetch('/auth/reset-password', { method: 'POST', body: { token, password }, auth: false })
 }
 
+export async function changePassword(currentPassword, newPassword) {
+  return apiFetch('/auth/change-password', {
+    method: 'POST',
+    body: { currentPassword, newPassword },
+  })
+}
+
 export async function publishSchedule() {
   return apiFetch('/schedules/publish', { method: 'POST' })
+}
+
+export async function archiveSchedule() {
+  return apiFetch('/schedules/archive', { method: 'POST' })
 }
 
 export async function fetchUserAccounts() {
