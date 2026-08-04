@@ -165,6 +165,284 @@
     @apply text-link font-medium hover:text-link-hover transition-colors;
   }
 
+  /* ——— Login composition ——— */
+  .pmss-login {
+    @apply flex flex-col md:flex-row;
+    min-height: 100dvh;
+  }
+
+  .pmss-login-toolbar {
+    @apply absolute top-3 right-3 z-20;
+    top: max(0.75rem, env(safe-area-inset-top));
+    right: max(0.75rem, env(safe-area-inset-right));
+  }
+
+  .pmss-login-theme-toggle {
+    backdrop-filter: blur(8px);
+    background-color: color-mix(in srgb, var(--pmss-surface) 80%, transparent);
+    border: 1px solid var(--pmss-border-soft);
+    box-shadow: var(--pmss-shadow-card);
+  }
+
+  .pmss-login-brand {
+    @apply relative overflow-hidden flex items-end md:items-center;
+    min-height: clamp(14rem, 36vh, 20rem);
+    padding:
+      max(2rem, env(safe-area-inset-top))
+      1.75rem
+      2rem
+      max(1.75rem, env(safe-area-inset-left));
+    color: #f4f1ea;
+    background:
+      radial-gradient(ellipse 80% 60% at 12% 18%, rgb(45 106 79 / 0.45), transparent 55%),
+      radial-gradient(ellipse 70% 55% at 88% 82%, rgb(36 59 83 / 0.9), transparent 50%),
+      linear-gradient(165deg, #142433 0%, #1c3348 48%, #163528 100%);
+  }
+
+  .pmss-login-brand-glow {
+    position: absolute;
+    inset: -25% -15% auto auto;
+    width: min(32rem, 80vw);
+    height: min(32rem, 80vw);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgb(232 226 216 / 0.16), transparent 68%);
+    animation: pmss-login-glow 16s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+
+  .pmss-login-brand-veil {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgb(0 0 0 / 0.12), transparent 35%, rgb(0 0 0 / 0.28)),
+      repeating-linear-gradient(
+        -12deg,
+        transparent,
+        transparent 14px,
+        rgb(255 255 255 / 0.015) 14px,
+        rgb(255 255 255 / 0.015) 15px
+      );
+  }
+
+  .pmss-login-brand-inner {
+    @apply relative z-[1] w-full max-w-lg flex flex-col gap-8 md:gap-10;
+    animation: pmss-login-rise 0.85s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .pmss-login-scripture {
+    @apply relative;
+  }
+
+  .pmss-login-scripture-mark {
+    display: block;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: clamp(3.5rem, 10vw, 5rem);
+    line-height: 0.7;
+    color: rgb(232 226 216 / 0.35);
+    margin-bottom: 0.35rem;
+    user-select: none;
+  }
+
+  .pmss-login-scripture-text {
+    margin: 0;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: clamp(1.35rem, 3.4vw, 1.85rem);
+    line-height: 1.35;
+    letter-spacing: 0.01em;
+    color: #f7f3ea;
+    max-width: 22ch;
+  }
+
+  .pmss-login-scripture-cite {
+    display: inline-block;
+    margin-top: 1rem;
+    font-family: var(--pmss-font-sans);
+    font-size: 0.7rem;
+    font-style: normal;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgb(232 226 216 / 0.62);
+  }
+
+  .pmss-login-scripture-cite--soft {
+    color: rgb(232 226 216 / 0.48);
+    margin-top: 0.65rem;
+  }
+
+  .pmss-login-scripture-secondary {
+    padding-top: 0.25rem;
+    border-top: 1px solid rgb(232 226 216 / 0.18);
+    max-width: 28rem;
+  }
+
+  .pmss-login-scripture-line {
+    margin: 0.85rem 0 0;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: clamp(1.05rem, 2.4vw, 1.2rem);
+    line-height: 1.45;
+    color: rgb(247 243 234 / 0.82);
+    max-width: 34ch;
+  }
+
+  .pmss-login-brand-foot {
+    @apply flex items-center gap-3 mt-auto;
+    padding-top: 0.5rem;
+  }
+
+  .pmss-login-mark {
+    @apply rounded-auth shrink-0;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.22);
+  }
+
+  .pmss-login-brand-wordmark {
+    margin: 0;
+    font-family: var(--pmss-font-sans);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: #f7f3ea;
+  }
+
+  .pmss-login-panel {
+    @apply relative flex flex-1 items-center justify-center;
+    background:
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgb(var(--pmss-primary-100) / 0.55), transparent 55%),
+      var(--pmss-bg-auth);
+    padding:
+      1.75rem
+      max(1.25rem, env(safe-area-inset-right))
+      max(1.75rem, env(safe-area-inset-bottom))
+      max(1.25rem, env(safe-area-inset-left));
+  }
+
+  .pmss-login-panel-inner {
+    @apply w-full;
+    max-width: 24.5rem;
+    animation: pmss-login-rise 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+  }
+
+  .pmss-login-header {
+    @apply mb-8;
+  }
+
+  .pmss-login-heading {
+    @apply text-[1.65rem] md:text-[1.85rem] font-semibold tracking-tight text-neutral-900;
+  }
+
+  .pmss-login-lead {
+    @apply mt-2 text-sm text-neutral-500 leading-relaxed;
+  }
+
+  .pmss-login-form {
+    @apply space-y-5;
+  }
+
+  .pmss-login-field {
+    animation: pmss-login-rise 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .pmss-login-field:nth-child(1) { animation-delay: 0.12s; }
+  .pmss-login-field:nth-child(2) { animation-delay: 0.18s; }
+
+  .pmss-login-input {
+    @apply h-12 transition-[border-color,box-shadow,background-color] duration-200;
+  }
+
+  .pmss-login-password {
+    @apply relative;
+  }
+
+  .pmss-login-password-toggle {
+    @apply absolute right-2.5 top-1/2 -translate-y-1/2 p-2 rounded-md
+      text-neutral-500 hover:text-link hover:bg-neutral-100 transition-colors;
+  }
+
+  .pmss-login-demo {
+    @apply space-y-4 rounded-xl p-3.5;
+    border: 1px solid var(--pmss-border-soft);
+    background-color: var(--pmss-surface-muted);
+  }
+
+  .pmss-login-error {
+    @apply text-sm px-3.5 py-2.5 rounded-input border;
+    color: #b91c1c;
+    background: #fef2f2;
+    border-color: #fecaca;
+  }
+
+  .pmss-login-meta {
+    @apply flex items-center justify-between gap-3 text-sm pt-0.5;
+  }
+
+  .pmss-login-remember {
+    @apply inline-flex items-center gap-2 cursor-pointer text-neutral-600 select-none;
+  }
+
+  .pmss-login-checkbox {
+    @apply rounded border-neutral-300 text-primary-600 focus:ring-primary-600;
+  }
+
+  .pmss-login-submit {
+    @apply w-full h-12 mt-1 transition-transform duration-200;
+  }
+  .pmss-login-submit:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+  .pmss-login-submit:not(:disabled):active {
+    transform: translateY(0);
+  }
+
+  .pmss-login-footnote {
+    @apply text-center text-xs text-neutral-500 mt-8 leading-relaxed;
+  }
+  .pmss-login-footnote span {
+    @apply block mt-1 text-link font-medium;
+  }
+
+  @media (min-width: 768px) {
+    .pmss-login-brand {
+      @apply w-[48%] max-w-2xl shrink-0 items-center;
+      min-height: 100dvh;
+      padding: 3.5rem 3.75rem;
+    }
+
+    .pmss-login-panel {
+      padding: 3.25rem 2.75rem;
+    }
+  }
+
+  @keyframes pmss-login-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pmss-login-glow {
+    from { transform: translate(0, 0) scale(1); opacity: 0.85; }
+    to { transform: translate(-8%, 10%) scale(1.08); opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pmss-login-brand-inner,
+    .pmss-login-panel-inner,
+    .pmss-login-field,
+    .pmss-login-brand-glow {
+      animation: none !important;
+    }
+    .pmss-login-submit:not(:disabled):hover {
+      transform: none;
+    }
+  }
+
   .pmss-input {
     @apply w-full h-11 px-3.5 text-sm
       placeholder:text-neutral-400 focus:outline-none focus:border-primary-600;
@@ -576,6 +854,106 @@
       radial-gradient(ellipse 55% 45% at 92% 18%, rgb(196 160 53 / 0.2), transparent 58%),
       radial-gradient(ellipse 40% 35% at 88% 72%, rgb(217 188 92 / 0.14), transparent 55%),
       var(--pmss-bg-auth);
+  }
+
+  [data-theme='b'] .pmss-login-brand {
+    color: #1a1a1a;
+    background:
+      radial-gradient(ellipse 70% 50% at 15% 20%, rgb(196 160 53 / 0.28), transparent 55%),
+      linear-gradient(160deg, #f3efe6 0%, #ebe4d6 48%, #e4d7b8 100%);
+  }
+
+  [data-theme='b'] .pmss-login-brand-glow {
+    background: radial-gradient(circle, rgb(196 160 53 / 0.35), transparent 68%);
+  }
+
+  [data-theme='b'] .pmss-login-brand-veil {
+    background:
+      linear-gradient(180deg, transparent, rgb(140 123 107 / 0.08)),
+      repeating-linear-gradient(
+        -12deg,
+        transparent,
+        transparent 14px,
+        rgb(140 123 107 / 0.04) 14px,
+        rgb(140 123 107 / 0.04) 15px
+      );
+  }
+
+  [data-theme='b'] .pmss-login-scripture-mark {
+    color: rgb(196 160 53 / 0.45);
+  }
+
+  [data-theme='b'] .pmss-login-scripture-text {
+    color: #1a1a1a;
+  }
+
+  [data-theme='b'] .pmss-login-scripture-cite,
+  [data-theme='b'] .pmss-login-scripture-cite--soft {
+    color: rgb(82 82 82 / 0.7);
+  }
+
+  [data-theme='b'] .pmss-login-scripture-secondary {
+    border-top-color: rgb(140 123 107 / 0.25);
+  }
+
+  [data-theme='b'] .pmss-login-scripture-line {
+    color: rgb(38 38 38 / 0.82);
+  }
+
+  [data-theme='b'] .pmss-login-brand-wordmark {
+    color: #1a1a1a;
+  }
+
+  [data-theme='b'] .pmss-login-heading {
+    @apply font-display font-normal;
+    font-size: clamp(2.1rem, 5vw, 2.6rem);
+    letter-spacing: 0.01em;
+  }
+
+  [data-theme='b'] .pmss-login-lead {
+    letter-spacing: 0.02em;
+    text-transform: none;
+  }
+
+  [data-theme='b'] .pmss-login-theme-toggle {
+    @apply bg-white/80;
+  }
+
+  [data-color-mode='dark'] .pmss-login-brand {
+    background:
+      radial-gradient(ellipse 80% 60% at 12% 18%, rgb(45 106 79 / 0.28), transparent 55%),
+      linear-gradient(155deg, #0f1720 0%, #152433 45%, #12261c 100%);
+  }
+
+  [data-color-mode='dark'][data-theme='b'] .pmss-login-brand {
+    color: #f3efe6;
+    background:
+      radial-gradient(ellipse 70% 50% at 15% 20%, rgb(196 160 53 / 0.18), transparent 55%),
+      linear-gradient(160deg, #1c1914 0%, #241f18 50%, #2a2414 100%);
+  }
+
+  [data-color-mode='dark'][data-theme='b'] .pmss-login-scripture-text,
+  [data-color-mode='dark'][data-theme='b'] .pmss-login-brand-wordmark {
+    color: #f7f3ea;
+  }
+
+  [data-color-mode='dark'][data-theme='b'] .pmss-login-scripture-line {
+    color: rgb(232 226 216 / 0.78);
+  }
+
+  [data-color-mode='dark'][data-theme='b'] .pmss-login-scripture-cite,
+  [data-color-mode='dark'][data-theme='b'] .pmss-login-scripture-cite--soft {
+    color: rgb(232 226 216 / 0.55);
+  }
+
+  [data-color-mode='dark'] .pmss-login-error {
+    color: #fecaca;
+    background: rgb(127 29 29 / 0.35);
+    border-color: rgb(185 28 28 / 0.45);
+  }
+
+  [data-color-mode='dark'] .pmss-login-password-toggle:hover {
+    @apply bg-neutral-100/10;
   }
 
   [data-theme='b'] .pmss-auth-mark {
