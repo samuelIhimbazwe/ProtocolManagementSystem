@@ -15,28 +15,53 @@ export function isSundayService(serviceName) {
   return serviceName === 'Sunday Service 1' || serviceName === 'Sunday Service 2'
 }
 
+export function isTuesdayService(serviceName) {
+  return serviceName === 'Tuesday Service'
+}
+
+export function isFridayService(serviceName) {
+  return serviceName === 'Friday Service' || /^Friday\b/i.test(String(serviceName ?? ''))
+}
+
 export function isIgaburoService(serviceName) {
   return serviceName === 'Igaburo Service'
 }
 
+/** Protocol teams are not assigned on Friday services. */
+export function isProtocolTeamService(serviceName) {
+  return !isFridayService(serviceName)
+}
+
 export function isFullRosterService(serviceName) {
-  return isSundayService(serviceName) || isIgaburoService(serviceName)
+  return isSundayService(serviceName) || isTuesdayService(serviceName) || isIgaburoService(serviceName)
 }
 
 export function isFullRosterKind(kind) {
-  return kind === 'sunday' || kind === 'igaburo'
+  return kind === 'sunday' || kind === 'tuesday' || kind === 'igaburo'
+}
+
+export function fullRosterKindLabel(kind) {
+  if (kind === 'igaburo') return 'Igaburo'
+  if (kind === 'tuesday') return 'Tuesday'
+  if (kind === 'sunday') return 'Sunday'
+  return 'Full roster'
 }
 
 export function buildTeamSlotsFromServices(services) {
-  const sorted = [...services].sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name))
+  const sorted = [...services]
+    .filter((s) => isProtocolTeamService(s.name))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name))
+
   const sunday = sorted.filter((s) => isSundayService(s.name))
+  const tuesday = sorted.filter((s) => isTuesdayService(s.name))
   const igaburo = sorted.filter((s) => isIgaburoService(s.name))
   const other = sorted.filter((s) => !isFullRosterService(s.name))
-  const ordered = [...sunday, ...igaburo, ...other]
+  const ordered = [...sunday, ...tuesday, ...igaburo, ...other]
 
   return ordered.map((s) => {
     let kind = 'weekday'
     if (isSundayService(s.name)) kind = 'sunday'
+    else if (isTuesdayService(s.name)) kind = 'tuesday'
     else if (isIgaburoService(s.name)) kind = 'igaburo'
 
     return {
@@ -45,7 +70,7 @@ export function buildTeamSlotsFromServices(services) {
       serviceDate: s.date,
       date: `${formatSlotDate(s.date)} — ${s.name}`,
       kind,
-      targetSize: isFullRosterService(s.name) ? FULL_ROSTER_TEAM_SIZE : 6,
+      targetSize: FULL_ROSTER_TEAM_SIZE,
     }
   })
 }
@@ -86,6 +111,7 @@ export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = tru
   const slots = buildTeamSlotsFromServices(services)
   const usedOnDate = new Map()
   let sundayIndex = 0
+  let tuesdayIndex = 0
   let igaburoIndex = 0
   let weekdayIndex = 0
 
@@ -101,13 +127,19 @@ export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = tru
       return { ...base, ...teamFromMembers(members, 'sunday') }
     }
 
+    if (slot.kind === 'tuesday') {
+      const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, tuesdayIndex * 7 + 2)
+      tuesdayIndex += 1
+      return { ...base, ...teamFromMembers(members, 'tuesday') }
+    }
+
     if (slot.kind === 'igaburo') {
       const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, igaburoIndex * 9 + 3)
       igaburoIndex += 1
       return { ...base, ...teamFromMembers(members, 'igaburo') }
     }
 
-    const members = pickMembers(pool, slot.targetSize, weekdayIndex * 5 + 11)
+    const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, weekdayIndex * 5 + 11)
     weekdayIndex += 1
     return { ...base, ...teamFromMembers(members, 'weekday') }
   })

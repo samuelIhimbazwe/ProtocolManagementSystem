@@ -50,6 +50,40 @@ export function validateSchedulePayload(payload, rules) {
     })
   }
 
+  if (ruleMap['tuesday-team-size']?.enabled) {
+    const tueTeams = teams.filter((t) => t.kind === 'tuesday')
+    const bad = tueTeams.filter((t) => (t.members?.length ?? 0) !== FULL_ROSTER_TEAM_SIZE)
+    rows.push({
+      rule: 'Tuesday team size',
+      issue:
+        bad.length === 0
+          ? `All Tuesday services filled with ${FULL_ROSTER_TEAM_SIZE} members (incl. TL/VTL)`
+          : `${bad.length} Tuesday team(s) not exactly ${FULL_ROSTER_TEAM_SIZE} members`,
+      severity: bad.length === 0 ? 'Passed' : 'Error',
+      service: 'August Tuesdays',
+      status: bad.length === 0 ? 'Resolved' : 'Open',
+    })
+  }
+
+  if (ruleMap['no-friday-teams']?.enabled) {
+    const fridayTeams = teams.filter(
+      (t) =>
+        t.kind === 'friday' ||
+        /Friday/i.test(t.serviceName ?? '') ||
+        /Friday Service/i.test(t.date ?? ''),
+    )
+    rows.push({
+      rule: 'No Friday protocol teams',
+      issue:
+        fridayTeams.length === 0
+          ? 'Protocol does not serve on Friday — no Friday teams present'
+          : `${fridayTeams.length} Friday team(s) must be removed`,
+      severity: fridayTeams.length === 0 ? 'Passed' : 'Error',
+      service: 'Friday services',
+      status: fridayTeams.length === 0 ? 'Resolved' : 'Open',
+    })
+  }
+
   if (ruleMap['igaburo-team-size']?.enabled) {
     const ig = teams.filter((t) => t.kind === 'igaburo')
     const bad = ig.filter((t) => (t.members?.length ?? 0) !== FULL_ROSTER_TEAM_SIZE)
