@@ -26,6 +26,7 @@ function publicUser(row) {
     displayName: row.display_name,
     appRole: row.app_role,
     status: row.status,
+    mustChangePassword: Boolean(row.must_change_password),
   }
 }
 
@@ -33,6 +34,30 @@ function usernameFromName(name) {
   const parts = name.toLowerCase().split(/\s+/).filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}.${parts[parts.length - 1]}`.replace(/[^a-z.]/g, '')
   return parts[0]?.replace(/[^a-z]/g, '') ?? 'user'
+}
+
+function appRoleFromMemberRole(role) {
+  const map = {
+    President: 'president',
+    'Vice President': 'vice_president',
+    Secretary: 'secretary',
+    Treasurer: 'treasurer',
+    Coordinator: 'coordinator',
+    Member: 'member',
+  }
+  return map[role] ?? 'member'
+}
+
+async function allocateUsername(baseName) {
+  const base = usernameFromName(baseName) || 'user'
+  let candidate = base
+  let n = 2
+  while (await db.prepare(`SELECT id FROM users WHERE username = ? COLLATE NOCASE`).get(candidate)) {
+    candidate = `${base}${n}`
+    n += 1
+    if (n > 500) throw new Error('Could not allocate username')
+  }
+  return candidate
 }
 
 router.get('/', authMiddleware, async (req, res) => {
@@ -91,14 +116,16 @@ router.post('/', authMiddleware, async (req, res) => {
   if (existing) return res.status(400).json({ error: 'Member already has an account' })
 
   const un = username?.trim() || usernameFromName(member.name)
-  const em = String(email ?? '').trim() || (createActive ? `${un}@church.internal` : '')
-  if (!em) {
-    return res.status(400).json({ error: 'A valid invite email is required' })
+  const em = String(email ?? '').trim().toLowerCase() || (createActive ? '' : '')
+  if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+    return res.status(400).json({ error: 'A valid email is required for login' })
   }
   const name = displayName?.trim() || member.name
 
   const dup = await db.prepare(`SELECT id FROM users WHERE username = ? COLLATE NOCASE`).get(un)
   if (dup) return res.status(400).json({ error: 'Username already taken' })
+  const emailDup = await db.prepare(`SELECT id FROM users WHERE email = ? COLLATE NOCASE`).get(em)
+  if (emailDup) return res.status(400).json({ error: 'Email already in use' })
 
   const tempPassword = createActive ? null : `Invite-${uuid().slice(0, 8)}!`
   const plainPassword = createActive ? String(password) : tempPassword
@@ -109,12 +136,22 @@ router.post('/', authMiddleware, async (req, res) => {
   await db
     .prepare(
       createActive
-        ? `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status, invited_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`
-        : `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status, invited_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        ? `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status, invited_at, must_change_password)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
+        : `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status, invited_at, must_change_password)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 1)`,
     )
-    .run(id, un, em, hash, String(memberId), name, appRole, status)
+    .run(
+      id,
+      un,
+      em,
+      hash,
+      String(memberId),
+      name,
+      appRole,
+      status,
+      ...(createActive ? [req.body?.mustChangePassword ? 1 : 0] : []),
+    )
 
   let inviteMail = null
   if (!createActive) {
@@ -141,6 +178,100 @@ router.post('/', authMiddleware, async (req, res) => {
     }
   }
   return res.status(201).json(body)
+})
+
+/** Create Active accounts for every roster member who does not already have one. */
+router.post('/bulk-from-roster', authMiddleware, async (req, res) => {
+  if (!MANAGE_ROLES.has(req.auth.role)) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+
+  const password = String(req.body?.password ?? '').trim()
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' })
+  }
+
+  const onlyActive = req.body?.onlyActive !== false
+  const members = await db
+    .prepare(
+      onlyActive
+        ? `SELECT * FROM members WHERE status = 'Active' ORDER BY name`
+        : `SELECT * FROM members ORDER BY name`,
+    )
+    .all()
+
+  const linked = new Set(
+    (await db.prepare(`SELECT member_id FROM users WHERE member_id IS NOT NULL`).all()).map((r) =>
+      String(r.member_id),
+    ),
+  )
+
+  const hash = await bcrypt.hash(password, 10)
+  const created = []
+  const skipped = []
+  const errors = []
+
+  for (const member of members) {
+    const memberId = String(member.id)
+    if (linked.has(memberId)) {
+      skipped.push({ memberId, name: member.name, reason: 'Already has an account' })
+      continue
+    }
+    try {
+      const rosterEmail = String(member.email ?? '').trim().toLowerCase()
+      if (!rosterEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rosterEmail)) {
+        skipped.push({
+          memberId,
+          name: member.name,
+          reason: 'Missing roster email (required for login)',
+        })
+        continue
+      }
+      const emailTaken = await db
+        .prepare(`SELECT id FROM users WHERE email = ? COLLATE NOCASE`)
+        .get(rosterEmail)
+      if (emailTaken) {
+        skipped.push({ memberId, name: member.name, reason: 'Email already used by another account' })
+        continue
+      }
+      const username = await allocateUsername(member.name)
+      const appRole = appRoleFromMemberRole(member.role)
+      const id = uuid()
+      await db
+        .prepare(
+          `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status, invited_at, must_change_password)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'Active', NULL, 1)`,
+        )
+        .run(id, username, rosterEmail, hash, memberId, member.name, appRole)
+      linked.add(memberId)
+      created.push({
+        id,
+        username,
+        email: rosterEmail,
+        memberId,
+        displayName: member.name,
+        appRole,
+        status: 'Active',
+        mustChangePassword: true,
+      })
+    } catch (err) {
+      errors.push({ memberId, name: member.name, error: err.message ?? 'Create failed' })
+    }
+  }
+
+  await audit('users.bulk_from_roster', req.auth.sub, {
+    created: created.length,
+    skipped: skipped.length,
+    errors: errors.length,
+  })
+
+  return res.json({
+    created: created.length,
+    skipped: skipped.length,
+    errors,
+    users: created,
+    defaultPasswordHint: 'Members should change this password after first login.',
+  })
 })
 
 router.patch('/:id', authMiddleware, async (req, res) => {

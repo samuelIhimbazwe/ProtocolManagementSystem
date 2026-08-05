@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { KeyRound, MailPlus, UserPlus, UserCheck, UserX } from 'lucide-react'
+import { KeyRound, MailPlus, UserPlus, UserCheck, UserX, Users } from 'lucide-react'
 import { PageHeader, DataTable, Badge } from '../layouts/AppShell'
 import Modal from '../components/Modal'
 import MembersSubnav from '../components/MembersSubnav'
@@ -16,7 +16,7 @@ import {
 } from '../data/userAccounts'
 import { USE_API } from '../api/config'
 import { fetchUserAccounts } from '../api/client'
-import { inviteUser, createUser, patchUser, fetchMembers } from '../api/schedule'
+import { inviteUser, createUser, patchUser, fetchMembers, bulkCreateUsersFromRoster } from '../api/schedule'
 
 function mapApiUser(u) {
   return {
@@ -36,6 +36,7 @@ function mapApiMember(m) {
   return {
     id: String(m.id),
     name: m.name,
+    email: m.email ?? '',
     role: m.role,
   }
 }
@@ -68,12 +69,20 @@ export default function UserAccountsPage() {
   const [search, setSearch] = useState('')
   const [inviteOpen, setInviteOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkPassword, setBulkPassword] = useState('Password123!')
+  const [bulkConfirm, setBulkConfirm] = useState('Password123!')
+  const [bulkResult, setBulkResult] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [toast, setToast] = useState(null)
 
   const availableMembers = useMemo(() => membersWithoutAccount(accounts, roster), [accounts, roster])
+  const bulkReadyMembers = useMemo(
+    () => availableMembers.filter((m) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(m.email ?? '').trim())),
+    [availableMembers],
+  )
 
   const showToast = (msg) => {
     setToast(msg)
@@ -90,7 +99,7 @@ export default function UserAccountsPage() {
       ...f,
       memberId,
       username,
-      email: clearEmail ? '' : `${username}@church.internal`,
+      email: clearEmail ? '' : member.email || `${username}@church.internal`,
       appRole: member.role === 'Member' ? 'member' : ROLES.find((r) => r.label === member.role)?.id ?? 'member',
     }))
   }
@@ -246,6 +255,10 @@ export default function UserAccountsPage() {
       setFormError('Username is required')
       return
     }
+    if (!isValidEmail(form.email)) {
+      setFormError('A valid email is required for login')
+      return
+    }
     if (form.password.length < 8) {
       setFormError('Password must be at least 8 characters')
       return
@@ -285,6 +298,45 @@ export default function UserAccountsPage() {
       setCreateOpen(false)
     } catch (err) {
       setFormError(err.message ?? 'Could not create user')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const openBulk = () => {
+    setBulkPassword('Password123!')
+    setBulkConfirm('Password123!')
+    setBulkResult(null)
+    setFormError('')
+    setBulkOpen(true)
+  }
+
+  const submitBulk = async () => {
+    if (bulkPassword.length < 8) {
+      setFormError('Password must be at least 8 characters')
+      return
+    }
+    if (bulkPassword !== bulkConfirm) {
+      setFormError('Passwords do not match')
+      return
+    }
+    if (!USE_API) {
+      setFormError('Bulk create requires the API')
+      return
+    }
+    setSubmitting(true)
+    setFormError('')
+    setBulkResult(null)
+    try {
+      const result = await bulkCreateUsersFromRoster({ password: bulkPassword, onlyActive: true })
+      setBulkResult(result)
+      await reloadAccounts()
+      const parts = []
+      if (result.created) parts.push(`${result.created} created`)
+      if (result.skipped) parts.push(`${result.skipped} skipped`)
+      showToast(parts.length ? `Roster accounts: ${parts.join(', ')}` : 'No new accounts created')
+    } catch (err) {
+      setFormError(err.message ?? 'Bulk create failed')
     } finally {
       setSubmitting(false)
     }
@@ -442,6 +494,14 @@ export default function UserAccountsPage() {
         actions={
           canManage ? (
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="pmss-btn-secondary"
+                onClick={openBulk}
+                disabled={bulkReadyMembers.length === 0}
+              >
+                <Users className="w-4 h-4" /> Create all accounts
+              </button>
               <button
                 type="button"
                 className="pmss-btn-secondary"
@@ -630,6 +690,91 @@ export default function UserAccountsPage() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        title="Create all member accounts"
+        description={`Creates Active logins for ${bulkReadyMembers.length} roster member${bulkReadyMembers.length === 1 ? '' : 's'} who have an email and no account yet. Usernames are generated automatically; members sign in with their email and the temporary password, then change it.`}
+        wide
+        footer={
+          <>
+            <button type="button" className="pmss-btn-secondary" onClick={() => setBulkOpen(false)}>
+              Close
+            </button>
+            <button
+              type="button"
+              className="pmss-btn-primary"
+              onClick={submitBulk}
+              disabled={submitting || bulkReadyMembers.length === 0}
+            >
+              {submitting
+                ? 'Creating…'
+                : `Create ${bulkReadyMembers.length} account${bulkReadyMembers.length === 1 ? '' : 's'}`}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1.5">Temporary password</label>
+              <input
+                type="password"
+                className="pmss-input"
+                value={bulkPassword}
+                onChange={(e) => setBulkPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1.5">Confirm password</label>
+              <input
+                type="password"
+                className="pmss-input"
+                value={bulkConfirm}
+                onChange={(e) => setBulkConfirm(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-neutral-500">
+            Members without an email on the roster are skipped. Add emails under Members (or import them), then run
+            this again. Sign-in uses email, not username.
+          </p>
+          {availableMembers.length > bulkReadyMembers.length && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-input px-3 py-2">
+              {availableMembers.length - bulkReadyMembers.length} member
+              {availableMembers.length - bulkReadyMembers.length === 1 ? '' : 's'} missing email will be skipped.
+            </p>
+          )}
+          {formError && (
+            <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-input px-3 py-2" role="alert">
+              {formError}
+            </p>
+          )}
+          {bulkResult && (
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50/80 p-3 text-sm space-y-2">
+              <p className="font-medium text-neutral-800">
+                {bulkResult.created ?? 0} created · {bulkResult.skipped ?? 0} skipped
+                {(bulkResult.errors?.length ?? 0) > 0 ? ` · ${bulkResult.errors.length} errors` : ''}
+              </p>
+              {(bulkResult.users?.length ?? 0) > 0 && (
+                <ul className="text-xs text-neutral-700 max-h-40 overflow-y-auto space-y-0.5 font-mono">
+                  {bulkResult.users.slice(0, 40).map((u) => (
+                    <li key={u.id}>
+                      {u.email} — {u.displayName}
+                    </li>
+                  ))}
+                  {bulkResult.users.length > 40 && (
+                    <li>…and {bulkResult.users.length - 40} more</li>
+                  )}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
       </Modal>
 
       {toast && (

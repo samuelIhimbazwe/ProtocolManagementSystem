@@ -37,7 +37,7 @@ export default function MemberProfilePage() {
   const [linkedAccount, setLinkedAccount] = useState(null)
   const [loading, setLoading] = useState(USE_API)
   const [editOpen, setEditOpen] = useState(false)
-  const [form, setForm] = useState({ name: '', phone: '', choir: '', status: 'Active' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', choir: '', status: 'Active' })
   const [toast, setToast] = useState(null)
   const [saving, setSaving] = useState(false)
 
@@ -77,6 +77,7 @@ export default function MemberProfilePage() {
     if (!member) return
     setForm({
       name: member.name ?? '',
+      email: member.email ?? '',
       phone: member.phone ?? '',
       choir: member.choir ?? '',
       status: member.status ?? 'Active',
@@ -93,6 +94,7 @@ export default function MemberProfilePage() {
     try {
       const body = {
         name: form.name.trim(),
+        email: form.email.trim() || null,
         phone: form.phone.trim() || null,
         choir: form.choir.trim() || null,
         status: form.status,
@@ -158,6 +160,7 @@ export default function MemberProfilePage() {
         </Section>
         <Section title="Contact information">
           <div className="grid gap-4">
+            <Field label="Email" value={member.email ?? '—'} />
             <Field label="Phone" value={member.phone ?? '—'} />
             {linkedAccount && (
               <Field label="PMSS login" value={`${linkedAccount.username} · ${linkedAccount.status}`} />
@@ -197,6 +200,15 @@ export default function MemberProfilePage() {
               className="pmss-input"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">Email</label>
+            <input
+              type="email"
+              className="pmss-input"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             />
           </div>
           <div>

@@ -17,7 +17,8 @@ const FINANCE_BASE = {
   verifyContributions: false,
   viewFinanceLedger: false,
   viewFinanceReports: false,
-  submitContributions: false,
+  /** Every roster-linked account can (and should) submit their own contributions. */
+  submitContributions: true,
 }
 
 /** Permission flags — map to Figma role-based frame variants */
@@ -114,7 +115,6 @@ export const ROLE_PERMISSIONS = {
     editSettings: false,
     schedulingTabs: ['calendar', 'choir', 'teams', 'history'],
     ...FINANCE_BASE,
-    submitContributions: true,
   },
 }
 
