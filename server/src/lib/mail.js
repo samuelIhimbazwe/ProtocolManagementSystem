@@ -5,11 +5,11 @@
 export async function sendInviteEmail({ to, displayName, username, tempPassword }) {
   const payload = {
     to,
-    subject: 'You are invited to PMSS',
+    subject: 'You are invited to TMS',
     text: [
       `Hello ${displayName},`,
       '',
-      'You have been invited to Protocol Management & Scheduling (PMSS).',
+      'You have been invited to Time Table Management System (TMS).',
       `Username: ${username}`,
       tempPassword ? `Temporary password: ${tempPassword}` : null,
       '',

@@ -146,7 +146,7 @@ async function openDatabase() {
     pool.on('error', (err) => {
       console.error('Unexpected Postgres pool error', err)
     })
-    console.log('PMSS database: Postgres (DATABASE_URL)')
+    console.log('TMS database: Postgres (DATABASE_URL)')
     return createPgDb(pool)
   }
 
@@ -157,7 +157,7 @@ async function openDatabase() {
   const syncDb = new DatabaseSync(dbPath)
   syncDb.exec('PRAGMA journal_mode = WAL')
   syncDb.exec('PRAGMA foreign_keys = ON')
-  console.log(`PMSS database: SQLite (${dbPath})`)
+  console.log(`TMS database: SQLite (${dbPath})`)
   return createSqliteDb(syncDb)
 }
 
@@ -572,6 +572,8 @@ export async function initSchema() {
   await ensureColumn('contribution_submissions', 'evidence_file_mime', 'TEXT')
   await ensureColumn('contribution_submissions', 'evidence_file_path', 'TEXT')
   await ensureColumn('schedule_versions', 'archived_at', 'TEXT')
+  await ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn('members', 'email', 'TEXT')
 }
 
 async function ensureColumn(table, column, typeSql) {

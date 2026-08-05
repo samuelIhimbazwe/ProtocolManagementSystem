@@ -1,11 +1,11 @@
 import { useEffect } from 'react'
 import { X } from 'lucide-react'
 
-export default function Modal({ title, description, open, onClose, children, footer, wide, xl }) {
+export default function Modal({ title, description, open, onClose, children, footer, wide, xl, dismissible = true }) {
   useEffect(() => {
     if (!open) return
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape' && dismissible) onClose()
     }
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -14,7 +14,7 @@ export default function Modal({ title, description, open, onClose, children, foo
       document.body.style.overflow = prev
       window.removeEventListener('keydown', onKey)
     }
-  }, [open, onClose])
+  }, [open, onClose, dismissible])
 
   if (!open) return null
 
@@ -22,12 +22,16 @@ export default function Modal({ title, description, open, onClose, children, foo
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom,0px)]">
-      <button
-        type="button"
-        className="absolute inset-0 bg-neutral-900/40 backdrop-blur-[2px]"
-        aria-label="Close dialog"
-        onClick={onClose}
-      />
+      {dismissible ? (
+        <button
+          type="button"
+          className="absolute inset-0 bg-neutral-900/40 backdrop-blur-[2px]"
+          aria-label="Close dialog"
+          onClick={onClose}
+        />
+      ) : (
+        <div className="absolute inset-0 bg-neutral-900/50 backdrop-blur-[2px]" aria-hidden="true" />
+      )}
       <div
         role="dialog"
         aria-modal="true"
@@ -41,13 +45,15 @@ export default function Modal({ title, description, open, onClose, children, foo
             </h2>
             {description && <p className="text-sm text-neutral-500 mt-1">{description}</p>}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 shrink-0"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {dismissible && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 shrink-0"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
         <div className="px-4 sm:px-5 py-4 overflow-y-auto overscroll-contain min-h-0 flex-1">{children}</div>
         {footer && (

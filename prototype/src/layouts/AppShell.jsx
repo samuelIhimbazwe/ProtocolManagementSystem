@@ -17,12 +17,14 @@ import {
 } from 'lucide-react'
 import { NavLink, Outlet, useLocation, Navigate, useNavigate, Link } from 'react-router-dom'
 import { NAV_ITEMS, MOBILE_NAV, MEMBERS } from '../data/mock'
+import { APP_NAME } from '../data/brand'
 import { useRole } from '../context/RoleContext'
 import { useAuth } from '../context/AuthContext'
 import { ROLES } from '../data/roles'
 import { canRecordAttendance } from '../data/memberAttendance'
 import GlobalSearch from '../components/GlobalSearch'
 import NotificationBell from '../components/NotificationBell'
+import ForcePasswordChangeModal from '../components/ForcePasswordChangeModal'
 import ColorModeToggle from '../components/ColorModeToggle'
 
 const SIDEBAR_COLLAPSED_KEY = 'pmss-sidebar-collapsed'
@@ -208,9 +210,9 @@ export default function AppShell() {
           </div>
           {!sidebarCollapsed && (
             <div className="min-w-0 flex-1">
-              <p className="pmss-brand-title text-sm font-semibold leading-tight text-white tracking-wide">PMSS</p>
+              <p className="pmss-brand-title text-sm font-semibold leading-tight text-white tracking-wide">{APP_NAME}</p>
               <p className="pmss-brand-eyebrow text-[10px] text-white/55 leading-tight truncate">
-                Protocol Ministry
+                Time Table
               </p>
             </div>
           )}
@@ -277,7 +279,7 @@ export default function AppShell() {
             <div className="pmss-brand-mark w-8 h-8 rounded-lg bg-primary-700 flex items-center justify-center text-white">
               <Church className="w-4 h-4" strokeWidth={2} />
             </div>
-            <span className="pmss-brand-title font-semibold text-sm text-neutral-900">PMSS</span>
+            <span className="pmss-brand-title font-semibold text-sm text-neutral-900">{APP_NAME}</span>
           </div>
           {sidebarCollapsed && (
             <button
@@ -333,6 +335,7 @@ export default function AppShell() {
 
         <main className="flex-1 p-3 sm:p-4 md:p-8 pb-24 md:pb-10 overflow-x-hidden overflow-y-auto pmss-main-scroll min-w-0">
           <Outlet />
+          <ForcePasswordChangeModal />
         </main>
       </div>
 
@@ -360,12 +363,12 @@ export default function AppShell() {
 export function PageHeader({ title, description, actions }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-5 sm:mb-7">
-      <div className="min-w-0">
-        <h1 className="pmss-page-title text-xl sm:text-[1.65rem] md:text-2xl font-semibold tracking-tight text-neutral-900">
+      <div className="pmss-page-heading min-w-0 pl-3 border-l-[3px] border-orange-500">
+        <h1 className="pmss-page-title text-xl sm:text-[1.65rem] md:text-2xl font-semibold tracking-tight text-orange-600">
           {title}
         </h1>
         {description && (
-          <p className="pmss-page-description text-sm text-neutral-500 mt-1.5 leading-relaxed max-w-2xl">
+          <p className="pmss-page-description text-sm mt-1.5 leading-relaxed max-w-2xl text-orange-700/80">
             {description}
           </p>
         )}

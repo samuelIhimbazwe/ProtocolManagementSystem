@@ -68,7 +68,7 @@ function leadershipRows(payload) {
 export function downloadScheduleCsv(payload, { filename, monthLabel } = {}) {
   const label = monthLabel ?? payload.monthLabel ?? 'Schedule'
   const name = filename ?? `${exportBasename(label)}.csv`
-  const chunks = [`# PMSS Schedule — ${label}`, '']
+  const chunks = [`# TMS Schedule — ${label}`, '']
 
   chunks.push('## Services', 'Date,Name,Day,Status')
   for (const r of servicesRows(payload)) {
@@ -111,7 +111,7 @@ export function downloadScheduleExcel(payload, { filename, monthLabel } = {}) {
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
 <head><meta charset="utf-8"><title>Schedule</title></head>
 <body>
-  <h2>PMSS Schedule — ${escapeHtml(label)}</h2>
+  <h2>TMS Schedule — ${escapeHtml(label)}</h2>
   ${table(
     'Services',
     ['Date', 'Name', 'Day', 'Status'],
@@ -169,7 +169,7 @@ export async function downloadSchedulePdf(payload, { monthLabel, filename } = {}
   const html = `
   <div style="font-family:system-ui,sans-serif;color:#111">
     <h1 style="font-size:18px;margin:0 0 4px">Protocol schedule</h1>
-    <p style="font-size:12px;color:#555;margin:0 0 12px">${escapeHtml(label)} · PMSS</p>
+    <p style="font-size:12px;color:#555;margin:0 0 12px">${escapeHtml(label)} · TMS</p>
     ${section(
       'Services',
       ['Date', 'Name', 'Day', 'Status'],
