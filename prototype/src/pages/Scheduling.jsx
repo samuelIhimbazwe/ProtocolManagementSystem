@@ -23,6 +23,7 @@ import { fetchScheduleHistory, saveScheduleDraft } from '../api/schedule'
 import { PUBLISH_INFO, SCHEDULE_HISTORY } from '../data/mock'
 import { normalizeTeam } from '../components/TeamCardActions'
 import ScheduleDownloadMenu from '../components/ScheduleDownloadMenu'
+import Modal from '../components/Modal'
 import ChoirScheduleTab from './scheduling/ChoirScheduleTab'
 import ServiceTeamsTab from './scheduling/ServiceTeamsTab'
 import {
@@ -96,15 +97,107 @@ export default function SchedulingPage() {
   const [publishMeta, setPublishMeta] = useState(PUBLISH_INFO)
   const [publishing, setPublishing] = useState(false)
   const [archiving, setArchiving] = useState(false)
-
-  const selectTab = (id) => {
-    setTab(id)
-    setSearchParams({ tab: id })
-  }
+  const [calendarMonth, setCalendarMonth] = useState(payload.monthKey ?? '2026-08')
+  const [leaderModal, setLeaderModal] = useState(null) // { index, field: 'tl'|'vtl' }
+  const [leaderPick, setLeaderPick] = useState('')
 
   const showToast = (msg) => {
     setToast(msg)
     setTimeout(() => setToast(null), 2800)
+  }
+
+  useEffect(() => {
+    if (payload.monthKey) setCalendarMonth(payload.monthKey)
+  }, [payload.monthKey])
+
+  const setLeadershipRows = useCallback(
+    (next) => {
+      const list = typeof next === 'function' ? next(leadership) : next
+      updatePayload((p) => ({ ...p, leadershipReview: list }))
+    },
+    [leadership, updatePayload],
+  )
+
+  const poolForLeadership = useCallback(
+    (row) => {
+      const match = teamRows.find((t) => t.date === row.date)
+      if (match?.members?.length) return match.members
+      const all = [...new Set(teamRows.flatMap((t) => t.members ?? []))]
+      return all.length ? all : [row.tl, row.vtl].filter(Boolean)
+    },
+    [teamRows],
+  )
+
+  const approveLeadership = (index) => {
+    setLeadershipRows((rows) =>
+      rows.map((row, i) => (i === index ? { ...row, status: 'Approved' } : row)),
+    )
+    showToast('Leadership approved')
+  }
+
+  const openChangeLeader = (index, field) => {
+    const row = leadership[index]
+    if (!row) return
+    const pool = poolForLeadership(row)
+    const current = field === 'tl' ? row.tl : row.vtl
+    setLeaderModal({ index, field })
+    setLeaderPick(pool.includes(current) ? current : pool[0] ?? '')
+  }
+
+  const saveLeaderChange = () => {
+    if (!leaderModal || !leaderPick) return
+    const { index, field } = leaderModal
+    setLeadershipRows((rows) =>
+      rows.map((row, i) => (i === index ? { ...row, [field]: leaderPick, status: 'Pending approval' } : row)),
+    )
+    setLeaderModal(null)
+    showToast(field === 'tl' ? 'Team leader updated' : 'Vice team leader updated')
+  }
+
+  const randomizeLeadership = (index) => {
+    const row = leadership[index]
+    if (!row) return
+    const pool = poolForLeadership(row)
+    if (pool.length < 2) {
+      showToast('Need at least two members to randomize')
+      return
+    }
+    const shuffled = [...pool].sort(() => Math.random() - 0.5)
+    const tl = shuffled[0]
+    const vtl = shuffled.find((n) => n !== tl) ?? shuffled[1]
+    setLeadershipRows((rows) =>
+      rows.map((r, i) => (i === index ? { ...r, tl, vtl, status: 'Pending approval' } : r)),
+    )
+    showToast('Leadership randomized')
+  }
+
+  const generateMonthlyCalendar = () => {
+    const label = (() => {
+      try {
+        const [y, m] = calendarMonth.split('-').map(Number)
+        return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', {
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'UTC',
+        })
+      } catch {
+        return calendarMonth
+      }
+    })()
+    updatePayload((p) => ({
+      ...p,
+      monthKey: calendarMonth,
+      monthLabel: label,
+      services: (p.services ?? []).map((s) =>
+        String(s.date ?? '').startsWith(calendarMonth) ? { ...s, status: 'Scheduled' } : s,
+      ),
+    }))
+    showToast(`Monthly calendar generated for ${label}`)
+  }
+
+  const selectTab = (id) => {
+    setTab(id)
+    setSearchParams({ tab: id })
   }
 
   const exportSchedule = async (formatId) => {
@@ -230,9 +323,14 @@ export default function SchedulingPage() {
       {tab === 'calendar' && (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-3 items-center">
-            <input type="month" defaultValue="2026-08" className="pmss-input w-auto" />
+            <input
+              type="month"
+              value={calendarMonth}
+              onChange={(e) => setCalendarMonth(e.target.value)}
+              className="pmss-input w-auto"
+            />
             {canEdit && (
-            <button type="button" className="pmss-btn-primary" onClick={() => showToast('Monthly calendar generated')}>
+            <button type="button" className="pmss-btn-primary" onClick={generateMonthlyCalendar}>
               <Sparkles className="w-4 h-4" /> Generate monthly calendar
             </button>
             )}
@@ -248,7 +346,7 @@ export default function SchedulingPage() {
                 render: (r) => <Badge variant={r.status === 'Scheduled' ? 'success' : 'warning'}>{r.status}</Badge>,
               },
             ]}
-            rows={services}
+            rows={services.filter((s) => !calendarMonth || String(s.date ?? '').startsWith(calendarMonth))}
           />
         </div>
       )}
@@ -298,16 +396,16 @@ export default function SchedulingPage() {
               <div className="flex flex-wrap gap-2">
                 {canEdit ? (
                 <>
-                <button type="button" className="pmss-btn-primary text-xs h-9 px-3">
+                <button type="button" className="pmss-btn-primary text-xs h-9 px-3" onClick={() => approveLeadership(i)}>
                   <Check className="w-3.5 h-3.5" /> Approve
                 </button>
-                <button type="button" className="pmss-btn-secondary text-xs h-9 px-3">
+                <button type="button" className="pmss-btn-secondary text-xs h-9 px-3" onClick={() => openChangeLeader(i, 'tl')}>
                   Change leader
                 </button>
-                <button type="button" className="pmss-btn-secondary text-xs h-9 px-3">
+                <button type="button" className="pmss-btn-secondary text-xs h-9 px-3" onClick={() => openChangeLeader(i, 'vtl')}>
                   Change vice
                 </button>
-                <button type="button" className="pmss-btn-secondary text-xs h-9 px-3">
+                <button type="button" className="pmss-btn-secondary text-xs h-9 px-3" onClick={() => randomizeLeadership(i)}>
                   <Shuffle className="w-3.5 h-3.5" /> Randomize again
                 </button>
                 </>
@@ -458,6 +556,33 @@ export default function SchedulingPage() {
           {toast}
         </div>
       )}
+
+      <Modal
+        open={Boolean(leaderModal)}
+        onClose={() => setLeaderModal(null)}
+        title={leaderModal?.field === 'vtl' ? 'Change vice team leader' : 'Change team leader'}
+        description={leaderModal != null ? leadership[leaderModal.index]?.date : undefined}
+        footer={
+          <>
+            <button type="button" className="pmss-btn-secondary" onClick={() => setLeaderModal(null)}>
+              Cancel
+            </button>
+            <button type="button" className="pmss-btn-primary" onClick={saveLeaderChange} disabled={!leaderPick}>
+              Save
+            </button>
+          </>
+        }
+      >
+        {leaderModal != null && (
+          <select className="pmss-input" value={leaderPick} onChange={(e) => setLeaderPick(e.target.value)}>
+            {poolForLeadership(leadership[leaderModal.index] ?? {}).map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        )}
+      </Modal>
     </div>
   )
 }

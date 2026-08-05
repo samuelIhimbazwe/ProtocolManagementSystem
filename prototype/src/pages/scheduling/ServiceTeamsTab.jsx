@@ -219,13 +219,7 @@ export default function ServiceTeamsTab({
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pmss-no-print">
-        <DisplayFormatToggle
-          format={format}
-          onChange={setFormat}
-          bulletinId="teams-bulletin"
-          bulletinTitle="Service teams bulletin"
-          onToast={showToast}
-        />
+        <DisplayFormatToggle format={format} onChange={setFormat} />
       </div>
       <p className="text-sm text-neutral-600 bg-primary-50 border border-primary-100 rounded-card px-4 py-3 pmss-no-print">
         <strong className="text-neutral-900">{protocolPool.length} protocol members</strong> in roster. Build engine

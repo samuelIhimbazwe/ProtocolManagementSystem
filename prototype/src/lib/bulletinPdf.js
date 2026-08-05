@@ -131,6 +131,13 @@ export async function downloadHtmlDocumentAsPdf(html, { fileName = 'document.pdf
   }
 }
 
+/** Full HTML documents (with &lt;style&gt; / &lt;body&gt;) → real PDF download. */
+export async function downloadDocumentHtmlAsPdf(fullHtml, { fileName = 'document.pdf', widthPx = 794 } = {}) {
+  const styles = (String(fullHtml).match(/<style[^>]*>[\s\S]*?<\/style>/gi) ?? []).join('\n')
+  const body = String(fullHtml).match(/<body[^>]*>([\s\S]*)<\/body>/i)?.[1] ?? fullHtml
+  return downloadHtmlDocumentAsPdf(`${styles}${body}`, { fileName, widthPx })
+}
+
 /**
  * Renders the on-screen bulletin and downloads a real PDF file.
  */

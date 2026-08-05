@@ -210,13 +210,7 @@ export default function ChoirScheduleTab({
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pmss-no-print">
-        <DisplayFormatToggle
-          format={format}
-          onChange={setFormat}
-          bulletinId="choir-bulletin"
-          bulletinTitle="Choir schedule bulletin"
-          onToast={showToast}
-        />
+        <DisplayFormatToggle format={format} onChange={setFormat} />
       </div>
 
       <div className="flex flex-wrap gap-2 pmss-no-print">
