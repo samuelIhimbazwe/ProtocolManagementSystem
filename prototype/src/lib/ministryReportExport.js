@@ -1,4 +1,5 @@
 import { downloadBlob } from './choirScheduleExport'
+import { downloadDocumentHtmlAsPdf } from './bulletinPdf.js'
 
 const DEFAULT_TITLE = 'PMSS Ministry Report'
 
@@ -351,16 +352,13 @@ export function downloadReportsExcel(report, filename = 'pmss-ministry-report.xl
   downloadBlob(new Blob(['\uFEFF', html], { type: 'application/vnd.ms-excel;charset=utf-8' }), filename)
 }
 
-export function downloadReportsPdf(report, options) {
+export async function downloadReportsPdf(report, options) {
   const { title, subtitle, include } = normalizeOptions(options)
   const sections = buildSections(report, include, title, subtitle)
   const html = pdfFromSections(sections, title, subtitle, report)
-
-  const win = window.open('', '_blank', 'noopener,noreferrer')
-  if (!win) throw new Error('Pop-up blocked — allow pop-ups to export PDF')
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  setTimeout(() => win.print(), 300)
+  const safe = String(title || 'ministry-report')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return downloadDocumentHtmlAsPdf(html, { fileName: `pmss-${safe || 'ministry-report'}.pdf` })
 }

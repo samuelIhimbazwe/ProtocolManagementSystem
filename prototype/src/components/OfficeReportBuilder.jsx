@@ -219,10 +219,16 @@ export default function OfficeReportBuilder({
         snapshot: { ...data.snapshot, generatedAt: data.generatedAt },
       }
       const stamp = slugifyTitle(full.title)
-      if (format === 'pdf') downloadOfficeReportPdf(full)
-      else if (format === 'excel') downloadOfficeReportExcel(full, `pmss-office-report-${stamp}.xls`)
-      else downloadOfficeReportCsv(full, `pmss-office-report-${stamp}.csv`)
-      onToast?.(format === 'pdf' ? 'Use Print → Save as PDF' : `Downloaded (${format.toUpperCase()})`)
+      if (format === 'pdf') {
+        const result = await downloadOfficeReportPdf(full)
+        onToast?.(`Downloaded ${result?.fileName ?? 'office-report.pdf'}`)
+      } else if (format === 'excel') {
+        downloadOfficeReportExcel(full, `pmss-office-report-${stamp}.xls`)
+        onToast?.('Downloaded (EXCEL)')
+      } else {
+        downloadOfficeReportCsv(full, `pmss-office-report-${stamp}.csv`)
+        onToast?.('Downloaded (CSV)')
+      }
     } catch (err) {
       onToast?.(err.message ?? 'Download failed')
     } finally {

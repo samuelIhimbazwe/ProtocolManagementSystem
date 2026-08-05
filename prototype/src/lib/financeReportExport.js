@@ -1,5 +1,6 @@
 import { downloadBlob } from './choirScheduleExport'
 import { formatRwf } from './money'
+import { downloadDocumentHtmlAsPdf } from './bulletinPdf.js'
 
 const DEFAULT_TITLE = 'PMSS Finance Report'
 
@@ -448,7 +449,7 @@ export function downloadFinanceReportsExcel(data, filename = 'pmss-finance-repor
   downloadBlob(blob, filename)
 }
 
-export function downloadFinanceReportsPdf(data, options) {
+export async function downloadFinanceReportsPdf(data, options) {
   const { title, subtitle, include } = normalizeOptions(options)
   const sections = buildSections(data, include, title, subtitle)
   const html = `<!DOCTYPE html>
@@ -466,18 +467,15 @@ export function downloadFinanceReportsPdf(data, options) {
     th, td { border: 1px solid #ddd; padding: 4px 6px; text-align: left; }
     th { background: #f5f5f5; }
     p { font-size: 12px; color: #555; }
-    @media print { body { padding: 0; } }
   </style>
 </head>
 <body>
   ${buildPdfHtml(sections, title, subtitle)}
 </body>
 </html>`
-  const win = window.open('', '_blank', 'noopener,noreferrer')
-  if (!win) throw new Error('Pop-up blocked — allow pop-ups to export PDF')
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  setTimeout(() => win.print(), 300)
+  const safe = String(title || 'finance-report')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return downloadDocumentHtmlAsPdf(html, { fileName: `pmss-${safe || 'finance-report'}.pdf` })
 }

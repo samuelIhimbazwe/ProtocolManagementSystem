@@ -159,7 +159,7 @@ export default function ReportsPage() {
     include: builderInclude,
   })
 
-  const exportReport = (format, options) => {
+  const exportReport = async (format, options) => {
     if (!report) {
       showToast('Report not loaded yet')
       return
@@ -174,8 +174,8 @@ export default function ReportsPage() {
         downloadReportsExcel(report, `pmss-ministry-report-${stamp}.xls`, opts)
         showToast('Report downloaded (Excel)')
       } else if (format === 'pdf') {
-        downloadReportsPdf(report, opts)
-        showToast('Use Print → Save as PDF')
+        const result = await downloadReportsPdf(report, opts)
+        showToast(`Downloaded ${result?.fileName ?? 'report.pdf'}`)
       }
     } catch (err) {
       showToast(err.message ?? 'Export failed')
@@ -203,7 +203,7 @@ export default function ReportsPage() {
         <select
           className="pmss-input w-full lg:w-44"
           value={o.monthLabel ?? 'August 2026'}
-          onChange={() => {}}
+          onChange={() => showToast('Only the current schedule month is available in this pilot')}
           aria-label="Report month"
         >
           <option>{o.monthLabel ?? 'August 2026'}</option>

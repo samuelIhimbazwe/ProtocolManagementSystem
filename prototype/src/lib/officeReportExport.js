@@ -1046,15 +1046,14 @@ function hashCode(str) {
   return h
 }
 
-export function downloadOfficeReportPdf(payload) {
+export async function downloadOfficeReportPdf(payload) {
+  const { downloadDocumentHtmlAsPdf } = await import('./bulletinPdf.js')
   const html = buildOfficeReportPreviewHtml(payload)
-  const win = window.open('', '_blank', 'noopener,noreferrer')
-  if (!win) throw new Error('Pop-up blocked — allow pop-ups to export PDF')
-  win.document.open()
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  setTimeout(() => win.print(), 300)
+  const safe = String(payload?.title || 'office-report')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return downloadDocumentHtmlAsPdf(html, { fileName: `pmss-${safe || 'office-report'}.pdf` })
 }
 
 export function downloadOfficeReportCsv(payload, filename = 'pmss-office-report.csv') {
