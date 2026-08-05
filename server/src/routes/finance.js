@@ -257,6 +257,68 @@ async function ensureFollowUp(submissionId, outstanding, note, actorId) {
 router.get('/summary', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_ROLES)) return
 
+  const types = (await db
+    .prepare(`SELECT * FROM contribution_types WHERE status = 'Active' ORDER BY name`)
+    .all()).map(mapType)
+
+  const activeMethods = (await db
+    .prepare(`SELECT * FROM payment_methods WHERE active = 1 ORDER BY sort_order, label`)
+    .all()).map(mapMethod)
+
+  if (req.auth.role === 'member') {
+    const mid = req.auth.memberId
+    const memberProgress = []
+    if (mid) {
+      for (const t of types) {
+        const row = await db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(t.id)
+        const goal = await memberGoalFor(t.id, mid, row)
+        const paid = await confirmedTotalForMember(t.id, mid)
+        const remaining = Math.max(0, goal - paid)
+        const entry = {
+          id: t.id,
+          name: t.name,
+          frequency: t.frequency,
+          deadline: t.deadline,
+          visibility: t.visibility,
+          memberGoal: goal,
+          paid,
+          remaining,
+          progressPct: goal > 0 ? Math.min(100, Math.round((paid / goal) * 100)) : 0,
+        }
+        if (t.visibility === 'public') {
+          const collectedAmt = await ministryCollected(t.id)
+          entry.ministryGoal = t.ministryGoal
+          entry.collected = collectedAmt
+          entry.ministryProgressPct =
+            t.ministryGoal > 0 ? Math.min(100, Math.round((collectedAmt / t.ministryGoal) * 100)) : 0
+        }
+        memberProgress.push(entry)
+      }
+    }
+
+    const publicGoals = []
+    for (const t of types.filter((x) => x.visibility === 'public')) {
+      const collectedAmt = await ministryCollected(t.id)
+      publicGoals.push({
+        id: t.id,
+        name: t.name,
+        frequency: t.frequency,
+        deadline: t.deadline,
+        ministryGoal: t.ministryGoal,
+        collected: collectedAmt,
+        progressPct:
+          t.ministryGoal > 0 ? Math.min(100, Math.round((collectedAmt / t.ministryGoal) * 100)) : 0,
+      })
+    }
+
+    return res.json({
+      leadership: null,
+      memberProgress,
+      publicGoals,
+      methods: activeMethods,
+    })
+  }
+
   const pending = (
     await db
       .prepare(`SELECT COUNT(*) AS c FROM contribution_submissions WHERE status = 'pending'`)
@@ -289,21 +351,48 @@ router.get('/summary', authMiddleware, async (req, res) => {
       .get()
   ).total
 
-  const types = (await db
-    .prepare(`SELECT * FROM contribution_types WHERE status = 'Active' ORDER BY name`)
-    .all()).map(mapType)
+  const publicGoals = []
+  for (const t of types.filter((x) => x.visibility === 'public')) {
+    const collectedAmt = await ministryCollected(t.id)
+    publicGoals.push({
+      id: t.id,
+      name: t.name,
+      frequency: t.frequency,
+      deadline: t.deadline,
+      ministryGoal: t.ministryGoal,
+      collected: collectedAmt,
+      progressPct:
+        t.ministryGoal > 0 ? Math.min(100, Math.round((collectedAmt / t.ministryGoal) * 100)) : 0,
+    })
+  }
 
+  const leadership = {
+    totalCollected: collected,
+    pendingVerification: pending,
+    outstandingBalances: outstanding,
+    activeTypes,
+    goalAchievement: (() => {
+      const goals = types.reduce((s, t) => s + (t.ministryGoal || 0), 0)
+      return goals > 0 ? Math.round((collected / goals) * 100) : null
+    })(),
+  }
+
+  // Leadership also pays — include personal progress when the login is linked to the roster.
   let memberProgress = null
-  if (req.auth.role === 'member' && req.auth.memberId) {
+  if (req.auth.memberId) {
     const mid = req.auth.memberId
     memberProgress = []
-    for (const t of types.filter((x) => x.visibility === 'public' || true)) {
+    for (const t of types) {
       const row = await db.prepare(`SELECT * FROM contribution_types WHERE id = ?`).get(t.id)
       const goal = await memberGoalFor(t.id, mid, row)
       const paid = await confirmedTotalForMember(t.id, mid)
       const remaining = Math.max(0, goal - paid)
       memberProgress.push({
-        ...t,
+        id: t.id,
+        name: t.name,
+        frequency: t.frequency,
+        deadline: t.deadline,
+        visibility: t.visibility,
         memberGoal: goal,
         paid,
         remaining,
@@ -312,38 +401,11 @@ router.get('/summary', authMiddleware, async (req, res) => {
     }
   }
 
-  const publicGoals = []
-  for (const t of types.filter((x) => x.visibility === 'public')) {
-    const collectedAmt = await ministryCollected(t.id)
-    publicGoals.push({
-      ...t,
-      collected: collectedAmt,
-      progressPct:
-        t.ministryGoal > 0 ? Math.min(100, Math.round((collectedAmt / t.ministryGoal) * 100)) : 0,
-    })
-  }
-
-  const leadership =
-    req.auth.role !== 'member'
-      ? {
-          totalCollected: collected,
-          pendingVerification: pending,
-          outstandingBalances: outstanding,
-          activeTypes,
-          goalAchievement: (() => {
-            const goals = types.reduce((s, t) => s + (t.ministryGoal || 0), 0)
-            return goals > 0 ? Math.round((collected / goals) * 100) : null
-          })(),
-        }
-      : null
-
   return res.json({
     leadership,
     memberProgress,
     publicGoals,
-    methods: (await db
-      .prepare(`SELECT * FROM payment_methods WHERE active = 1 ORDER BY sort_order, label`)
-      .all()).map(mapMethod),
+    methods: activeMethods,
   })
 })
 
@@ -433,12 +495,37 @@ router.get('/types', authMiddleware, async (req, res) => {
   const types = []
   for (const r of rows) {
     const t = mapType(r)
+    if (req.auth.role === 'member') {
+      // Members may pay against active types; hide ministry collection for private goals.
+      const safe = {
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        category: t.category,
+        status: t.status,
+        frequency: t.frequency,
+        memberGoal: t.memberGoal,
+        visibility: t.visibility,
+        startDate: t.startDate,
+        deadline: t.deadline,
+        showMinistryGoal: t.visibility === 'public',
+      }
+      if (t.visibility === 'public') {
+        const collected = await ministryCollected(r.id)
+        safe.ministryGoal = t.ministryGoal
+        safe.collected = collected
+        safe.progressPct =
+          t.ministryGoal > 0 ? Math.min(100, Math.round((collected / t.ministryGoal) * 100)) : 0
+      }
+      types.push(safe)
+      continue
+    }
     const collected = await ministryCollected(r.id)
     types.push({
       ...t,
       collected,
       progressPct: t.ministryGoal > 0 ? Math.min(100, Math.round((collected / t.ministryGoal) * 100)) : 0,
-      showMinistryGoal: t.visibility === 'public' || req.auth.role !== 'member',
+      showMinistryGoal: true,
     })
   }
   return res.json({ types })
@@ -600,8 +687,35 @@ router.get('/submissions', authMiddleware, async (req, res) => {
 router.post('/submissions', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_ROLES)) return
   const b = req.body ?? {}
-  const memberId = req.auth.role === 'member' ? req.auth.memberId : b.memberId
-  if (!memberId) return res.status(400).json({ error: 'memberId required' })
+  // Members may only submit for themselves. Any roster-linked login may pay for themselves.
+  // Leadership with ledger access may also submit on behalf of another member.
+  if (req.auth.role === 'member') {
+    if (!req.auth.memberId) return res.status(403).json({ error: 'Member profile not linked' })
+  } else {
+    const payingSelf = !b.memberId || String(b.memberId) === String(req.auth.memberId)
+    if (payingSelf && req.auth.memberId) {
+      // own contribution — allowed for every finance role
+    } else if (!VIEW_LEDGER.has(req.auth.role)) {
+      return forbid(res)
+    }
+  }
+  const memberId =
+    req.auth.role === 'member'
+      ? req.auth.memberId
+      : b.memberId
+        ? String(b.memberId)
+        : req.auth.memberId
+          ? String(req.auth.memberId)
+          : null
+  if (!memberId) {
+    return res.status(400).json({
+      error: 'memberId required — link this login to a roster member or choose a member',
+    })
+  }
+  // Ignore any client-supplied memberId override from members.
+  if (req.auth.role === 'member' && b.memberId && String(b.memberId) !== String(req.auth.memberId)) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
   if (!b.contributionTypeId || !b.paymentDate || b.claimedAmount == null) {
     return res.status(400).json({ error: 'contributionTypeId, paymentDate, claimedAmount required' })
   }
@@ -658,8 +772,12 @@ router.get('/submissions/:id/evidence', authMiddleware, async (req, res) => {
   if (!requireRole(req, res, VIEW_ROLES)) return
   const sub = await db.prepare(`SELECT * FROM contribution_submissions WHERE id = ?`).get(req.params.id)
   if (!sub) return res.status(404).json({ error: 'Not found' })
-  if (req.auth.role === 'member' && sub.member_id !== req.auth.memberId) {
-    return res.status(403).json({ error: 'Forbidden' })
+  if (req.auth.role === 'member') {
+    if (String(sub.member_id ?? '') !== String(req.auth.memberId ?? '')) {
+      return res.status(403).json({ error: 'Forbidden' })
+    }
+  } else if (!VIEW_LEDGER.has(req.auth.role)) {
+    return forbid(res)
   }
   if (!sub.evidence_file_path) return res.status(404).json({ error: 'No evidence file' })
 

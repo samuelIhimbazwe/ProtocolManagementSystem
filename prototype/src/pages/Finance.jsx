@@ -30,7 +30,7 @@ import {
   fetchFollowups,
   updateFollowup,
   fetchFinanceReports,
-  openSubmissionEvidence,
+  fetchSubmissionEvidenceBlob,
 } from '../api/finance'
 import {
   formatRwf,
@@ -102,30 +102,135 @@ function readEvidenceFile(file) {
   })
 }
 
-function EvidenceCell({ row, onOpen, onError }) {
+function EvidenceCell({ row, onView }) {
   const hasFile = row.hasEvidenceFile || row.evidenceFileName
   const note = row.evidenceNote
   if (!hasFile && !note) return '—'
   return (
-    <div className="space-y-0.5 max-w-[14rem]">
-      {hasFile && (
-        <button
-          type="button"
-          className="text-xs font-medium text-primary-700 hover:text-primary-800 text-left truncate block w-full"
-          title={row.evidenceFileName ?? 'Open evidence'}
-          onClick={async () => {
-            try {
-              await onOpen(row.id)
-            } catch (err) {
-              onError?.(err.message ?? 'Could not open evidence')
-            }
-          }}
-        >
-          {row.evidenceFileName ?? 'View file'}
+    <button
+      type="button"
+      className="text-left space-y-0.5 max-w-[14rem] group"
+      title="View submitted evidence"
+      onClick={() => onView?.(row)}
+    >
+      <span className="text-xs font-medium text-primary-700 group-hover:text-primary-800 truncate block">
+        {hasFile ? row.evidenceFileName ?? 'View evidence' : 'View evidence'}
+      </span>
+      {note && <span className="text-xs text-neutral-600 truncate block" title={note}>{note}</span>}
+    </button>
+  )
+}
+
+function EvidenceViewerModal({ row, open, onClose, onError }) {
+  const [fileUrl, setFileUrl] = useState(null)
+  const [mime, setMime] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open || !row) {
+      setFileUrl(null)
+      setMime('')
+      return undefined
+    }
+    const hasFile = row.hasEvidenceFile || row.evidenceFileName
+    if (!hasFile) {
+      setFileUrl(null)
+      setMime('')
+      return undefined
+    }
+    let cancelled = false
+    let objectUrl = null
+    ;(async () => {
+      setLoading(true)
+      try {
+        const result = await fetchSubmissionEvidenceBlob(row.id)
+        if (cancelled) {
+          URL.revokeObjectURL(result.url)
+          return
+        }
+        objectUrl = result.url
+        setFileUrl(result.url)
+        setMime(result.mime)
+      } catch (err) {
+        if (!cancelled) onError?.(err.message ?? 'Could not open evidence')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per submission open
+  }, [open, row?.id, row?.hasEvidenceFile, row?.evidenceFileName])
+
+  const isImage = mime.startsWith('image/')
+  const isPdf = mime === 'application/pdf' || mime.includes('pdf')
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Submitted evidence"
+      description={
+        row
+          ? [row.memberName, row.contributionName, row.paymentDate].filter(Boolean).join(' · ')
+          : undefined
+      }
+      wide
+      footer={
+        <button type="button" className="pmss-btn-secondary" onClick={onClose}>
+          Close
         </button>
+      }
+    >
+      {row && (
+        <div className="space-y-4">
+          {row.evidenceNote && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
+                Note
+              </p>
+              <p className="text-sm text-neutral-800 whitespace-pre-wrap">{row.evidenceNote}</p>
+            </div>
+          )}
+          {(row.hasEvidenceFile || row.evidenceFileName) && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">
+                Attachment{row.evidenceFileName ? `: ${row.evidenceFileName}` : ''}
+              </p>
+              {loading && <p className="text-sm text-neutral-500">Loading evidence…</p>}
+              {!loading && fileUrl && isImage && (
+                <img
+                  src={fileUrl}
+                  alt={row.evidenceFileName ?? 'Submitted evidence'}
+                  className="max-h-[60vh] w-auto max-w-full rounded-lg border border-neutral-200 bg-neutral-50"
+                />
+              )}
+              {!loading && fileUrl && isPdf && (
+                <iframe
+                  title={row.evidenceFileName ?? 'Evidence PDF'}
+                  src={fileUrl}
+                  className="w-full h-[60vh] rounded-lg border border-neutral-200 bg-white"
+                />
+              )}
+              {!loading && fileUrl && !isImage && !isPdf && (
+                <a
+                  href={fileUrl}
+                  download={row.evidenceFileName ?? 'evidence'}
+                  className="inline-flex text-sm font-medium text-primary-700 hover:text-primary-800"
+                >
+                  Download {row.evidenceFileName ?? 'file'}
+                </a>
+              )}
+            </div>
+          )}
+          {!row.evidenceNote && !(row.hasEvidenceFile || row.evidenceFileName) && (
+            <p className="text-sm text-neutral-500">No evidence was submitted.</p>
+          )}
+        </div>
       )}
-      {note && <p className="text-xs text-neutral-600 truncate" title={note}>{note}</p>}
-    </div>
+    </Modal>
   )
 }
 
@@ -157,20 +262,32 @@ function ReportPreview({ title, to, countLabel, children }) {
 
 export default function FinancePage() {
   const location = useLocation()
-  const { permissions, roleId, member } = useRole()
+  const { permissions, roleId, member, memberId: roleMemberId, authUser } = useRole()
   const isMember = roleId === 'member'
   const canManageTypes = permissions.manageContributionTypes
   const canManageMethods = permissions.managePaymentMethods
   const canVerify = permissions.verifyContributions
   const canViewLedger = permissions.viewFinanceLedger
   const canViewReports = permissions.viewFinanceReports
-  const canSubmit = permissions.submitContributions || isMember || canVerify
+  const linkedMemberId =
+    member?.id != null
+      ? String(member.id)
+      : roleMemberId
+        ? String(roleMemberId)
+        : authUser?.memberId != null
+          ? String(authUser.memberId)
+          : null
+  // Everyone with a roster-linked login must be able to pay their own contribution.
+  const showPayContribution = Boolean(permissions.submitContributions && linkedMemberId)
 
   const visibleSections = SECTIONS.filter((s) => {
+    // Members: own goals, pay, payment methods, own history — nothing leadership-wide.
+    if (isMember) return s.id === 'overview' || s.id === 'methods'
     if (s.verify && !canVerify) return false
     if (s.reports && !canViewReports) return false
-    if (s.leadership && isMember) return false
-    if (s.id === 'methods' && isMember) return true
+    if (s.id === 'ledger' && !canViewLedger) return false
+    if (s.id === 'followups' && !canViewLedger) return false
+    if (s.id === 'types' && !canManageTypes && !canViewLedger) return false
     return true
   })
 
@@ -282,6 +399,7 @@ export default function FinancePage() {
   }
 
   const [verifyModal, setVerifyModal] = useState(null)
+  const [evidenceViewer, setEvidenceViewer] = useState(null)
   const [verifyForm, setVerifyForm] = useState({ action: 'confirm', receivedAmount: '', note: '' })
 
   const showToast = (msg) => {
@@ -402,6 +520,7 @@ export default function FinancePage() {
         paymentMethodId: payForm.paymentMethodId || undefined,
         evidenceNote: payForm.evidenceNote || undefined,
         evidenceFile: payForm.evidenceFile || undefined,
+        ...(!isMember && linkedMemberId ? { memberId: linkedMemberId } : {}),
       })
       showToast('Contribution submitted — pending verification')
       setPayOpen(false)
@@ -462,14 +581,18 @@ export default function FinancePage() {
     <div className="max-w-7xl mx-auto">
       <PageHeader
         title="Finance & Contributions"
-        description="Ministry contributions, payment verification, and accountability"
+        description={
+          isMember
+            ? 'Your contribution goals, payments, and payment methods — all members are expected to contribute'
+            : 'Ministry contributions, payment verification, and accountability — everyone pays their own contribution'
+        }
         actions={
           <div className="flex flex-wrap gap-2">
             <button type="button" className="pmss-btn-secondary text-sm h-9" onClick={load} disabled={loading}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
-            {(canSubmit) && (
+            {showPayContribution && (
               <button
                 type="button"
                 className="pmss-btn-primary text-sm h-9"
@@ -545,7 +668,7 @@ export default function FinancePage() {
                 </div>
               )}
 
-              {isMember && (
+              {(isMember || linkedMemberId) && (
                 <>
                   <div className="grid lg:grid-cols-2 gap-4">
                     {(summary?.memberProgress ?? []).map((p) => (
@@ -615,7 +738,7 @@ export default function FinancePage() {
                 </ul>
               </div>
 
-              {isMember && (
+              {linkedMemberId && (
                 <div className="pmss-card p-5">
                   <h2 className="font-semibold text-sm mb-3">My contribution history</h2>
                   <DataTable
@@ -633,11 +756,15 @@ export default function FinancePage() {
                         key: 'evidence',
                         label: 'Evidence',
                         render: (r) => (
-                          <EvidenceCell row={r} onOpen={openSubmissionEvidence} onError={showToast} />
+                          <EvidenceCell row={r} onView={setEvidenceViewer} />
                         ),
                       },
                     ]}
-                    rows={submissions}
+                    rows={
+                      isMember
+                        ? submissions
+                        : submissions.filter((r) => String(r.memberId) === String(linkedMemberId))
+                    }
                     emptyTitle="No submissions yet"
                     emptyDescription="Use Pay contribution to submit your first payment."
                   />
@@ -736,7 +863,7 @@ export default function FinancePage() {
                 <p className="text-sm text-neutral-500">Payment details for members. Only the treasurer can edit them.</p>
               )}
               <div className="grid sm:grid-cols-2 gap-4">
-                {methods.map((m) => (
+                {(canManageMethods ? methods : activeMethods).map((m) => (
                   <div key={m.id} className={`pmss-card p-5 ${m.active === false ? 'opacity-60' : ''}`}>
                     <div className="flex justify-between gap-2">
                       <h3 className="font-semibold text-sm">{m.label}</h3>
@@ -828,7 +955,7 @@ export default function FinancePage() {
                     key: 'evidence',
                     label: 'Evidence',
                     render: (r) => (
-                      <EvidenceCell row={r} onOpen={openSubmissionEvidence} onError={showToast} />
+                      <EvidenceCell row={r} onView={setEvidenceViewer} />
                     ),
                   },
                   { key: 'submittedAt', label: 'Submitted', render: (r) => r.submittedAt?.slice?.(0, 10) ?? '—' },
@@ -879,7 +1006,7 @@ export default function FinancePage() {
                     key: 'evidence',
                     label: 'Evidence',
                     render: (r) => (
-                      <EvidenceCell row={r} onOpen={openSubmissionEvidence} onError={showToast} />
+                      <EvidenceCell row={r} onView={setEvidenceViewer} />
                     ),
                   },
                   {
@@ -1327,7 +1454,18 @@ export default function FinancePage() {
               <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">
                 Submitted evidence
               </p>
-              <EvidenceCell row={verifyModal} onOpen={openSubmissionEvidence} onError={showToast} />
+              {verifyModal.evidenceNote && (
+                <p className="text-sm text-neutral-700 mb-2 whitespace-pre-wrap">{verifyModal.evidenceNote}</p>
+              )}
+              <button
+                type="button"
+                className="text-sm font-medium text-primary-700 hover:text-primary-800"
+                onClick={() => setEvidenceViewer(verifyModal)}
+              >
+                {verifyModal.hasEvidenceFile || verifyModal.evidenceFileName
+                  ? `View ${verifyModal.evidenceFileName ?? 'attachment'}`
+                  : 'View evidence details'}
+              </button>
             </div>
           )}
           <div>
@@ -1365,6 +1503,13 @@ export default function FinancePage() {
           )}
         </div>
       </Modal>
+
+      <EvidenceViewerModal
+        row={evidenceViewer}
+        open={Boolean(evidenceViewer)}
+        onClose={() => setEvidenceViewer(null)}
+        onError={showToast}
+      />
 
       {toast && (
         <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-card bg-neutral-900 text-white text-sm shadow-lg">

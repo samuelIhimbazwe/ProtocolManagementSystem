@@ -59,8 +59,8 @@ export function createSubmission(body) {
   return apiFetch('/finance/submissions', { method: 'POST', body })
 }
 
-/** Open attached evidence (image/PDF/doc) in a new tab. */
-export async function openSubmissionEvidence(submissionId) {
+/** Fetch attached evidence as a blob URL for in-app viewing. Caller must revoke the URL. */
+export async function fetchSubmissionEvidenceBlob(submissionId) {
   const res = await fetch(`${API_BASE}/finance/submissions/${submissionId}/evidence`, {
     headers: authHeaders(),
   })
@@ -69,8 +69,18 @@ export async function openSubmissionEvidence(submissionId) {
     throw new Error(data.error ?? 'Could not open evidence')
   }
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  window.open(url, '_blank', 'noopener,noreferrer')
+  const mime = res.headers.get('Content-Type') || blob.type || 'application/octet-stream'
+  return { blob, mime, url: URL.createObjectURL(blob) }
+}
+
+/** Open attached evidence (image/PDF/doc) in a new tab. Prefer in-app viewer when possible. */
+export async function openSubmissionEvidence(submissionId) {
+  const { url } = await fetchSubmissionEvidenceBlob(submissionId)
+  const win = window.open(url, '_blank', 'noopener,noreferrer')
+  if (!win) {
+    URL.revokeObjectURL(url)
+    throw new Error('Pop-up blocked — open View evidence instead')
+  }
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
