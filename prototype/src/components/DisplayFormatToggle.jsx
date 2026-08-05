@@ -1,31 +1,6 @@
-import { useState } from 'react'
-import { Download, LayoutGrid, List, Newspaper } from 'lucide-react'
-import { downloadBulletinPdf } from '../lib/bulletinPdf'
+import { LayoutGrid, List, Newspaper } from 'lucide-react'
 
-export default function DisplayFormatToggle({
-  format,
-  onChange,
-  bulletinId,
-  showPrint = true,
-  bulletinTitle = 'Bulletin',
-  onToast,
-}) {
-  const [busy, setBusy] = useState(false)
-
-  const handlePdf = async () => {
-    if (busy) return
-    setBusy(true)
-    try {
-      const result = await downloadBulletinPdf(bulletinId, { title: bulletinTitle })
-      onToast?.(`Downloaded ${result?.fileName ?? 'bulletin.pdf'}`)
-    } catch (err) {
-      onToast?.(err.message ?? 'PDF download failed')
-      if (!onToast) window.alert(err.message ?? 'PDF download failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
+export default function DisplayFormatToggle({ format, onChange }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium text-neutral-500 mr-1 hidden sm:inline">View</span>
@@ -61,18 +36,6 @@ export default function DisplayFormatToggle({
           <span className="hidden sm:inline">Bulletin</span>
         </button>
       </div>
-      {showPrint && format === 'bulletin' && bulletinId && (
-        <button
-          type="button"
-          className="pmss-btn-secondary h-8 px-3 text-xs"
-          onClick={handlePdf}
-          disabled={busy}
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">{busy ? 'Preparing PDF…' : 'Download PDF'}</span>
-          <span className="sm:hidden">{busy ? '…' : 'PDF'}</span>
-        </button>
-      )}
     </div>
   )
 }

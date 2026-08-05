@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Plus } from 'lucide-react'
 import { PageHeader, StatCard, DataTable, Badge } from '../layouts/AppShell'
 import DisplayFormatToggle from '../components/DisplayFormatToggle'
+import ScheduleDownloadMenu from '../components/ScheduleDownloadMenu'
 import AttendanceBulletin from '../components/bulletin/AttendanceBulletin'
 import AttendanceDashboardList from '../components/list/AttendanceDashboardList'
 import MemberAttendanceHistorySection from '../components/attendance/MemberAttendanceHistorySection'
@@ -12,6 +13,8 @@ import { ATTENDANCE_MONTHLY, RECENT_ATTENDANCE } from '../data/mock'
 import { USE_API } from '../api/config'
 import { fetchMyAttendanceHistory } from '../api/schedule'
 import { canRecordAttendance, getMemberAttendanceHistory } from '../data/memberAttendance'
+import { downloadBulletinPdf } from '../lib/bulletinPdf'
+import { downloadBlob } from '../lib/choirScheduleExport'
 
 const total =
   ATTENDANCE_MONTHLY.present +
@@ -30,6 +33,12 @@ export default function AttendanceDashboardPage() {
   const showRecordButton = canRecordAttendance(roleId, permissions)
 
   const [apiHistory, setApiHistory] = useState(null)
+  const [toast, setToast] = useState(null)
+
+  const showToast = (msg) => {
+    setToast(msg)
+    window.setTimeout(() => setToast(null), 2800)
+  }
 
   useEffect(() => {
     if (!USE_API || roleId !== 'member' || !member) return
@@ -43,6 +52,36 @@ export default function AttendanceDashboardPage() {
     if (USE_API && apiHistory != null) return apiHistory
     return getMemberAttendanceHistory(member.id)
   }, [roleId, member, apiHistory])
+
+  const exportAttendance = async (formatId) => {
+    try {
+      if (formatId === 'pdf') {
+        if (!document.getElementById('attendance-bulletin')) {
+          setFormat('bulletin')
+          await new Promise((r) => setTimeout(r, 50))
+        }
+        const result = await downloadBulletinPdf('attendance-bulletin', {
+          title: 'Attendance bulletin',
+          fileName: 'pmss-attendance-bulletin.pdf',
+        })
+        showToast(`Downloaded ${result?.fileName ?? 'attendance.pdf'}`)
+        return
+      }
+      const rows = RECENT_ATTENDANCE.map((r) => [r.service, r.date, r.rate, r.status])
+      if (formatId === 'csv') {
+        const lines = ['Service,Date,Rate,Status', ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))]
+        downloadBlob(new Blob(['\uFEFF', lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }), 'pmss-attendance.csv')
+        showToast('Attendance downloaded (CSV)')
+      } else if (formatId === 'excel') {
+        const table = rows.map((r) => `<tr>${r.map((c) => `<td>${String(c)}</td>`).join('')}</tr>`).join('')
+        const html = `<table><thead><tr><th>Service</th><th>Date</th><th>Rate</th><th>Status</th></tr></thead><tbody>${table}</tbody></table>`
+        downloadBlob(new Blob(['\uFEFF', html], { type: 'application/vnd.ms-excel;charset=utf-8' }), 'pmss-attendance.xls')
+        showToast('Attendance downloaded (Excel)')
+      }
+    } catch (err) {
+      showToast(err.message ?? 'Download failed')
+    }
+  }
 
   const attendanceStats = [
     { label: 'Attendance rate', value: ATTENDANCE_MONTHLY.rate },
@@ -64,12 +103,8 @@ export default function AttendanceDashboardPage() {
         description="August 2026 — participation across services"
         actions={
           <div className="flex flex-wrap items-center gap-3 pmss-no-print">
-            <DisplayFormatToggle
-              format={format}
-              onChange={setFormat}
-              bulletinId="attendance-bulletin"
-              bulletinTitle="Attendance bulletin"
-            />
+            <DisplayFormatToggle format={format} onChange={setFormat} />
+            <ScheduleDownloadMenu label="Download" onExport={exportAttendance} />
             {showRecordButton ? (
               <Link to="/attendance/record" className="pmss-btn-primary">
                 <Plus className="w-4 h-4" /> Record attendance
@@ -79,6 +114,18 @@ export default function AttendanceDashboardPage() {
         }
       />
 
+      {format !== 'bulletin' && (
+        <div className="pmss-offscreen-export" aria-hidden="true">
+          <AttendanceBulletin
+            id="attendance-bulletin"
+            monthly={ATTENDANCE_MONTHLY}
+            recentRows={RECENT_ATTENDANCE}
+            showSessionDetail
+            personalHistory={personalHistory}
+            member={roleId === 'member' ? member : null}
+          />
+        </div>
+      )}
       {format === 'bulletin' ? (
         <AttendanceBulletin
           id="attendance-bulletin"
@@ -158,6 +205,12 @@ export default function AttendanceDashboardPage() {
 
           {personalHistorySection}
         </>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-card bg-neutral-900 text-white text-sm shadow-lg">
+          {toast}
+        </div>
       )}
     </div>
   )

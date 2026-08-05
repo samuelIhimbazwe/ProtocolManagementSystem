@@ -66,6 +66,12 @@ export default function AttendanceRecordPage() {
       ATTENDANCE_SESSION_DEMO.records.map((r) => [r.memberId, r.status]),
     ),
   )
+  const [toast, setToast] = useState(null)
+
+  const showToast = (msg) => {
+    setToast(msg)
+    window.setTimeout(() => setToast(null), 2800)
+  }
 
   const setStatus = (id, status) => setStatuses((s) => ({ ...s, [id]: status }))
 
@@ -73,6 +79,31 @@ export default function AttendanceRecordPage() {
     name: m.name,
     status: statuses[m.id],
   }))
+
+  const saveDraft = async () => {
+    try {
+      if (USE_API && sessionId) {
+        const records = Object.entries(statuses).map(([memberId, status]) => ({ memberId, status }))
+        await saveAttendanceRecords(sessionId, records)
+      }
+      showToast('Attendance saved')
+    } catch (err) {
+      showToast(err.message ?? 'Could not save attendance')
+    }
+  }
+
+  const submitSession = async () => {
+    try {
+      if (USE_API && sessionId) {
+        const records = Object.entries(statuses).map(([memberId, status]) => ({ memberId, status }))
+        await saveAttendanceRecords(sessionId, records)
+        await submitAttendanceSession(sessionId)
+      }
+      showToast('Attendance submitted')
+    } catch (err) {
+      showToast(err.message ?? 'Could not submit attendance')
+    }
+  }
 
   return (
     <div className="max-w-3xl mx-auto pb-24 md:pb-8">
@@ -88,12 +119,7 @@ export default function AttendanceRecordPage() {
         description={`${serviceMeta.serviceType} — ${serviceMeta.serviceDate}`}
         actions={
           <div className="pmss-no-print">
-            <DisplayFormatToggle
-              format={format}
-              onChange={setFormat}
-              bulletinId="attendance-session-bulletin"
-              bulletinTitle="Attendance roll bulletin"
-            />
+            <DisplayFormatToggle format={format} onChange={setFormat} />
           </div>
         }
       />
@@ -101,8 +127,8 @@ export default function AttendanceRecordPage() {
       {format === 'bulletin' ? (
         <AttendanceSessionBulletin
           id="attendance-session-bulletin"
-          serviceType={ATTENDANCE_SESSION_DEMO.serviceType}
-          serviceDate={ATTENDANCE_SESSION_DEMO.serviceDate}
+          serviceType={serviceMeta.serviceType}
+          serviceDate={serviceMeta.serviceDate}
           rows={bulletinRows}
         />
       ) : format === 'list' ? (
@@ -112,11 +138,20 @@ export default function AttendanceRecordPage() {
             <div className="grid sm:grid-cols-2 gap-4 mt-3">
               <div>
                 <p className="text-xs text-neutral-500">Service date</p>
-                <input type="date" defaultValue={ATTENDANCE_SESSION_DEMO.serviceDate} className="pmss-input mt-1" />
+                <input
+                  type="date"
+                  value={serviceMeta.serviceDate}
+                  onChange={(e) => setServiceMeta((m) => ({ ...m, serviceDate: e.target.value }))}
+                  className="pmss-input mt-1"
+                />
               </div>
               <div>
                 <p className="text-xs text-neutral-500">Service type</p>
-                <select className="pmss-input mt-1" defaultValue={ATTENDANCE_SESSION_DEMO.serviceType}>
+                <select
+                  className="pmss-input mt-1"
+                  value={serviceMeta.serviceType}
+                  onChange={(e) => setServiceMeta((m) => ({ ...m, serviceType: e.target.value }))}
+                >
                   {SERVICE_TYPES.map((t) => (
                     <option key={t}>{t}</option>
                   ))}
@@ -133,11 +168,20 @@ export default function AttendanceRecordPage() {
             <div className="grid sm:grid-cols-2 gap-4 mt-3">
               <div>
                 <p className="text-xs text-neutral-500">Service date</p>
-                <input type="date" defaultValue={ATTENDANCE_SESSION_DEMO.serviceDate} className="pmss-input mt-1" />
+                <input
+                  type="date"
+                  value={serviceMeta.serviceDate}
+                  onChange={(e) => setServiceMeta((m) => ({ ...m, serviceDate: e.target.value }))}
+                  className="pmss-input mt-1"
+                />
               </div>
               <div>
                 <p className="text-xs text-neutral-500">Service type</p>
-                <select className="pmss-input mt-1" defaultValue={ATTENDANCE_SESSION_DEMO.serviceType}>
+                <select
+                  className="pmss-input mt-1"
+                  value={serviceMeta.serviceType}
+                  onChange={(e) => setServiceMeta((m) => ({ ...m, serviceType: e.target.value }))}
+                >
                   {SERVICE_TYPES.map((t) => (
                     <option key={t}>{t}</option>
                   ))}
@@ -176,32 +220,19 @@ export default function AttendanceRecordPage() {
       )}
 
       <div className="fixed md:static bottom-16 md:bottom-auto inset-x-0 md:mt-6 p-4 md:p-0 bg-white md:bg-transparent border-t md:border-0 border-neutral-200 flex gap-3 pmss-no-print">
-        <button
-          type="button"
-          className="pmss-btn-secondary flex-1 md:flex-none"
-          onClick={async () => {
-            if (USE_API && sessionId) {
-              const records = Object.entries(statuses).map(([memberId, status]) => ({ memberId, status }))
-              await saveAttendanceRecords(sessionId, records)
-            }
-          }}
-        >
+        <button type="button" className="pmss-btn-secondary flex-1 md:flex-none" onClick={saveDraft}>
           <Save className="w-4 h-4" /> Save
         </button>
-        <button
-          type="button"
-          className="pmss-btn-primary flex-1 md:flex-none"
-          onClick={async () => {
-            if (USE_API && sessionId) {
-              const records = Object.entries(statuses).map(([memberId, status]) => ({ memberId, status }))
-              await saveAttendanceRecords(sessionId, records)
-              await submitAttendanceSession(sessionId)
-            }
-          }}
-        >
+        <button type="button" className="pmss-btn-primary flex-1 md:flex-none" onClick={submitSession}>
           <Send className="w-4 h-4" /> Submit attendance
         </button>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-28 md:bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-card bg-neutral-900 text-white text-sm shadow-lg">
+          {toast}
+        </div>
+      )}
     </div>
   )
 }

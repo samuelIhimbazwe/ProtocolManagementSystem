@@ -305,7 +305,7 @@ export default function FinancePage() {
     }
   }, [reports, summary, types, methods, submissions, followups])
 
-  const exportFinanceReport = (format) => {
+  const exportFinanceReport = async (format) => {
     if (!reports) {
       showToast('Reports not loaded yet')
       return
@@ -324,8 +324,8 @@ export default function FinancePage() {
         downloadFinanceReportsExcel(financeExportBundle, `pmss-finance-report-${stamp}.xls`, opts)
         showToast('Report downloaded (Excel)')
       } else if (format === 'pdf') {
-        downloadFinanceReportsPdf(financeExportBundle, opts)
-        showToast('Use Print → Save as PDF')
+        const result = await downloadFinanceReportsPdf(financeExportBundle, opts)
+        showToast(`Downloaded ${result?.fileName ?? 'finance-report.pdf'}`)
       }
     } catch (err) {
       showToast(err.message ?? 'Export failed')
