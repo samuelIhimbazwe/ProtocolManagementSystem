@@ -39,8 +39,8 @@ export function AuthProvider({ children }) {
   }, [refresh])
 
   const login = useCallback(
-    async (username, password) => {
-      const data = await api.login(username, password)
+    async (email, password) => {
+      const data = await api.login(email, password)
       applySession(data)
       return data.user
     },
@@ -54,6 +54,10 @@ export function AuthProvider({ children }) {
     setOfficeAccess(null)
   }, [])
 
+  const markPasswordChanged = useCallback(() => {
+    setUser((u) => (u ? { ...u, mustChangePassword: false } : u))
+  }, [])
+
   const value = useMemo(
     () => ({
       useApi: USE_API,
@@ -65,8 +69,9 @@ export function AuthProvider({ children }) {
       login,
       logout,
       refresh,
+      markPasswordChanged,
     }),
-    [user, pilotToday, officeAccess, loading, login, logout, refresh],
+    [user, pilotToday, officeAccess, loading, login, logout, refresh, markPasswordChanged],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

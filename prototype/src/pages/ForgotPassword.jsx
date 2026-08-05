@@ -7,7 +7,7 @@ import { forgotPassword } from '../api/client'
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate()
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [resetLink, setResetLink] = useState('/reset-password')
 
@@ -15,7 +15,7 @@ export default function ForgotPasswordPage() {
     e.preventDefault()
     if (USE_API) {
       try {
-        const data = await forgotPassword(username.trim())
+        const data = await forgotPassword(email.trim())
         if (data.demoResetUrl) setResetLink(data.demoResetUrl)
       } catch {
         /* still show generic success */
@@ -27,12 +27,12 @@ export default function ForgotPasswordPage() {
   const demoResetUrl =
     USE_API && resetLink.startsWith('/')
       ? resetLink
-      : `/reset-password?token=demo-reset-${encodeURIComponent(username || 'user')}`
+      : `/reset-password?token=demo-reset-${encodeURIComponent(email || 'user')}`
 
   return (
     <AuthShell
       title="Forgot password"
-      subtitle="Enter your ministry username. We will send reset instructions to the email on file."
+      subtitle="Enter the email on your account. We will send reset instructions if it matches."
     >
       {sent ? (
         <div className="pmss-auth-card space-y-4">
@@ -42,8 +42,8 @@ export default function ForgotPasswordPage() {
             </div>
           </div>
           <p className="text-sm text-neutral-700 text-center">
-            If an account exists for <strong className="text-neutral-900">{username || 'that username'}</strong>, reset
-            instructions have been sent to the registered email.
+            If an account exists for <strong className="text-neutral-900">{email || 'that email'}</strong>, reset
+            instructions have been sent.
           </p>
           <p className="text-xs text-neutral-500 text-center">
             Links expire after 1 hour. Contact your coordinator if you do not receive an email.
@@ -60,23 +60,23 @@ export default function ForgotPasswordPage() {
       ) : (
         <form onSubmit={handleSubmit} className="pmss-auth-card space-y-4">
           <div>
-            <label htmlFor="forgot-username" className="pmss-auth-label">
-              Username
+            <label htmlFor="forgot-email" className="pmss-auth-label">
+              Email
               <span className="pmss-auth-required">*</span>
             </label>
             <input
-              id="forgot-username"
-              type="text"
+              id="forgot-email"
+              type="email"
               className="pmss-input"
-              placeholder="your.username"
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
           <p className="text-xs text-neutral-400">
-            For security, we do not confirm whether a username exists. Only ministry-issued accounts can reset
+            For security, we do not confirm whether an email exists. Only ministry-issued accounts can reset
             passwords.
           </p>
           <button type="submit" className="pmss-btn-primary w-full h-11">

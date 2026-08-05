@@ -17,18 +17,25 @@ function publicUser(row) {
     displayName: row.display_name,
     appRole: row.app_role,
     status: row.status,
+    mustChangePassword: Boolean(row.must_change_password),
   }
 }
 
 router.post('/login', async (req, res) => {
-  const { username, password } = req.body ?? {}
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' })
+  const identifier = String(req.body?.email ?? req.body?.username ?? '').trim()
+  const { password } = req.body ?? {}
+  if (!identifier || !password) {
+    return res.status(400).json({ error: 'Email and password required' })
   }
 
-  const user = await db
-    .prepare(`SELECT * FROM users WHERE username = ? COLLATE NOCASE`)
-    .get(String(username).trim())
+  let user = await db
+    .prepare(`SELECT * FROM users WHERE email = ? COLLATE NOCASE`)
+    .get(identifier)
+  if (!user) {
+    user = await db
+      .prepare(`SELECT * FROM users WHERE username = ? COLLATE NOCASE`)
+      .get(identifier)
+  }
 
   if (!user || user.status === 'Deactivated') {
     return res.status(401).json({ error: 'Invalid credentials or account inactive' })
@@ -84,14 +91,19 @@ router.get('/me', authMiddleware, async (req, res) => {
 })
 
 router.post('/forgot-password', async (req, res) => {
-  const { username } = req.body ?? {}
-  if (!username) {
-    return res.status(400).json({ error: 'Username required' })
+  const identifier = String(req.body?.email ?? req.body?.username ?? '').trim()
+  if (!identifier) {
+    return res.status(400).json({ error: 'Email required' })
   }
 
-  const user = await db
-    .prepare(`SELECT id FROM users WHERE username = ? COLLATE NOCASE`)
-    .get(String(username).trim())
+  let user = await db
+    .prepare(`SELECT id FROM users WHERE email = ? COLLATE NOCASE`)
+    .get(identifier)
+  if (!user) {
+    user = await db
+      .prepare(`SELECT id FROM users WHERE username = ? COLLATE NOCASE`)
+      .get(identifier)
+  }
 
   if (user) {
     const token = `reset-${uuid()}`
@@ -139,7 +151,9 @@ router.post('/reset-password', async (req, res) => {
   }
 
   const hash = await bcrypt.hash(password, 10)
-  await db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(hash, row.uid)
+  await db
+    .prepare(`UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?`)
+    .run(hash, row.uid)
   await db.prepare(`UPDATE password_reset_tokens SET used_at = datetime('now') WHERE token = ?`).run(token)
   await audit('auth.reset_password', row.uid, {})
 
@@ -169,10 +183,12 @@ router.post('/change-password', authMiddleware, async (req, res) => {
   }
 
   const hash = await bcrypt.hash(String(newPassword), 10)
-  await db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(hash, user.id)
+  await db
+    .prepare(`UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?`)
+    .run(hash, user.id)
   await audit('auth.change_password', user.id, {})
 
-  return res.json({ message: 'Password updated' })
+  return res.json({ message: 'Password updated', user: publicUser({ ...user, must_change_password: 0, password_hash: hash }) })
 })
 
 export default router
