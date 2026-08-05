@@ -24,8 +24,10 @@ import {
 import { USE_API } from '../api/config'
 import { changePassword } from '../api/client'
 import { fetchRules, saveRules as saveRulesApi } from '../api/schedule'
+import { useAuth } from '../context/AuthContext'
 
 function ChangePasswordCard({ onToast }) {
+  const { markPasswordChanged } = useAuth()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -50,6 +52,7 @@ function ChangePasswordCard({ onToast }) {
     setSubmitting(true)
     try {
       await changePassword(currentPassword, newPassword)
+      markPasswordChanged?.()
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
