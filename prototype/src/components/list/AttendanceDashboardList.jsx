@@ -1,7 +1,7 @@
 import { Badge } from '../../layouts/AppShell'
 import { ListView, ListViewTable, ListViewSummaryGrid } from './ListView'
 
-export default function AttendanceDashboardList({ monthly, recentRows }) {
+export default function AttendanceDashboardList({ monthly, recentRows, onViewService }) {
   const summary = [
     { label: 'Attendance rate', value: monthly.rate, tone: 0 },
     { label: 'Present', value: String(monthly.present), tone: 'present' },
@@ -40,7 +40,23 @@ export default function AttendanceDashboardList({ monthly, recentRows }) {
             {
               key: 'status',
               label: 'Status',
-              render: (r) => <Badge variant="success">{r.status}</Badge>,
+              render: (r) => (
+                <Badge variant={r.status === 'Submitted' ? 'success' : 'warning'}>{r.status}</Badge>
+              ),
+            },
+            {
+              key: 'actions',
+              label: '',
+              render: (r) =>
+                onViewService ? (
+                  <button
+                    type="button"
+                    className="text-sm font-medium text-primary-700 hover:text-primary-800"
+                    onClick={() => onViewService(r)}
+                  >
+                    View service
+                  </button>
+                ) : null,
             },
           ]}
           rows={recentRows}

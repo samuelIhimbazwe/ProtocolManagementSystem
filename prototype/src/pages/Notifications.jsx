@@ -38,7 +38,7 @@ export default function NotificationsPage() {
     <div className="max-w-3xl mx-auto">
       <PageHeader
         title="Notifications"
-        description="Announcements, schedule updates, and team assignments"
+        description="Announcements, schedule updates, attendance submissions, and team assignments"
         actions={
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" className="pmss-btn-secondary text-sm h-9" onClick={markAllRead}>
@@ -67,6 +67,11 @@ export default function NotificationsPage() {
                       {n.title}
                     </p>
                     <p className="text-sm text-neutral-500 mt-1">{n.body}</p>
+                    {n.href && (
+                      <Link to={n.href} className="inline-block text-xs font-medium text-primary-700 mt-2 hover:underline">
+                        Open attendance →
+                      </Link>
+                    )}
                   </div>
                   {n.unread ? <Badge variant="primary">New</Badge> : null}
                 </div>

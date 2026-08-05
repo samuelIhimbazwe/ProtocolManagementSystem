@@ -16,6 +16,7 @@ const NOTIFICATION_ACTIONS = new Set([
   'schedule.leadership_updated',
   'schedule.leadership_approved',
   'attendance.submit',
+  'attendance.update',
   'finance.submission.verify',
 ])
 
@@ -63,12 +64,20 @@ const ACTION_COPY = {
         : 'Team leadership assignments were approved'),
   },
   'attendance.submit': {
-    title: 'Attendance recorded',
+    title: 'Attendance submitted for review',
     body: (meta) =>
       meta.summary ||
       (meta.serviceName
-        ? `Attendance submitted for ${meta.serviceName}${meta.serviceDate ? ` (${meta.serviceDate})` : ''}`
-        : 'Attendance was submitted for a service'),
+        ? `${meta.submittedByName ? `${meta.submittedByName} submitted` : 'Attendance submitted'} for ${meta.serviceName}${meta.serviceDate ? ` (${meta.serviceDate})` : ''}`
+        : 'Attendance was submitted for leadership review'),
+  },
+  'attendance.update': {
+    title: 'Attendance updated',
+    body: (meta) =>
+      meta.summary ||
+      (meta.serviceName
+        ? `${meta.submittedByName ? `${meta.submittedByName} updated` : 'Attendance updated'} for ${meta.serviceName}${meta.serviceDate ? ` (${meta.serviceDate})` : ''}`
+        : 'Submitted attendance was updated'),
   },
   'finance.submission.verify': {
     title: (meta) => {
@@ -103,6 +112,13 @@ async function readIdsForUser(userId) {
   }
 }
 
+const ATTENDANCE_REVIEW_ROLES = new Set([
+  'coordinator',
+  'president',
+  'vice_president',
+  'secretary',
+])
+
 function formatItem(row, readSet) {
   const meta = parseMeta(row.meta_json)
   const copy = ACTION_COPY[row.action]
@@ -121,12 +137,26 @@ function formatItem(row, readSet) {
         ? 'announcement'
         : row.action.startsWith('finance.')
           ? 'finance'
-          : 'ministry',
+          : row.action.startsWith('attendance.')
+            ? 'attendance'
+            : 'ministry',
     title,
     body,
+    href: meta.href || (row.action.startsWith('attendance.') ? '/attendance' : undefined),
     createdAt: row.created_at,
     unread: !readSet.has(id),
+    recipientRoles: Array.isArray(meta.recipientRoles) ? meta.recipientRoles : null,
   }
+}
+
+function visibleToRole(item, role) {
+  if (item.action === 'attendance.submit' || item.action === 'attendance.update') {
+    if (Array.isArray(item.recipientRoles) && item.recipientRoles.length) {
+      return item.recipientRoles.includes(role)
+    }
+    return ATTENDANCE_REVIEW_ROLES.has(role)
+  }
+  return true
 }
 
 router.get('/', authMiddleware, async (req, res) => {
@@ -141,7 +171,11 @@ router.get('/', authMiddleware, async (req, res) => {
     .all(...NOTIFICATION_ACTIONS)
 
   const readSet = new Set(await readIdsForUser(req.auth.sub))
-  let items = rows.map((r) => formatItem(r, readSet)).filter(Boolean)
+  let items = rows
+    .map((r) => formatItem(r, readSet))
+    .filter(Boolean)
+    .filter((item) => visibleToRole(item, req.auth.role))
+    .map(({ recipientRoles, ...rest }) => rest)
 
   // If the log has no ministry-facing events yet, surface the latest published schedule.
   if (items.length === 0) {

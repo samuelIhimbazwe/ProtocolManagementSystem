@@ -134,7 +134,7 @@ export default function NotificationBell() {
                     className={`w-full text-left px-3 py-2.5 hover:bg-neutral-50 ${n.unread ? 'bg-primary-50/50' : ''}`}
                     onClick={() => {
                       setOpen(false)
-                      navigate('/notifications')
+                      navigate(n.href || '/notifications')
                     }}
                   >
                     <p className="text-sm font-medium text-neutral-900 flex items-center gap-2">
