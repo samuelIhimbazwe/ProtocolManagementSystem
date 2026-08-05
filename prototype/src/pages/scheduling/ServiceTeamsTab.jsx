@@ -9,7 +9,7 @@ import Modal from '../../components/Modal'
 import ScheduleDownloadMenu from '../../components/ScheduleDownloadMenu'
 import TeamCardActions, { normalizeTeam } from '../../components/TeamCardActions'
 import TeamMemberItems from '../../components/TeamMemberItems'
-import { MEMBERS, SERVICES, TEAM_ASSIGNMENTS } from '../../data/mock'
+import { MEMBERS } from '../../data/mock'
 import {
   FULL_ROSTER_TEAM_SIZE,
   buildMonthlyServiceTeams,
@@ -29,16 +29,13 @@ function teamKey(t) {
   return t.serviceId ?? t.date
 }
 
-function initTeams() {
-  return TEAM_ASSIGNMENTS.map((t) => ({ ...normalizeTeam(t), _key: teamKey(t) }))
-}
-
 export default function ServiceTeamsTab({
   canEdit,
   showToast,
   controlledTeams,
   onTeamsChange,
-  services: servicesProp,
+  onTeamsBuilt,
+  services: servicesProp = [],
   protocolPool: protocolPoolProp,
   monthLabel = 'August 2026',
 }) {
@@ -50,9 +47,10 @@ export default function ServiceTeamsTab({
     [protocolPoolProp],
   )
 
-  const services = servicesProp ?? SERVICES
+  const services = servicesProp ?? []
+  const hasCalendar = services.length > 0
 
-  const [internalTeams, setInternalTeams] = useState(initTeams)
+  const [internalTeams, setInternalTeams] = useState([])
   const teams = controlledTeams ?? internalTeams
   const setTeams = onTeamsChange ?? setInternalTeams
   const [modal, setModal] = useState(null)
@@ -63,14 +61,23 @@ export default function ServiceTeamsTab({
   const active = modal != null ? teams[modal.index] : null
 
   const runEngine = (shuffle) => {
+    if (!hasCalendar) {
+      showToast('Generate the monthly calendar first for the month you want')
+      return
+    }
     try {
       const built = buildMonthlyServiceTeams(protocolPool, services, { shuffle })
-      const fullRoster = built.filter((t) => isFullRosterKind(t.kind)).length
-      setTeams(built.map((t) => ({ ...normalizeTeam(t), _key: teamKey(t) })))
+      const withKeys = built.map((t) => ({ ...normalizeTeam(t), _key: teamKey(t) }))
+      const fullRoster = withKeys.filter((t) => isFullRosterKind(t.kind)).length
+      if (onTeamsBuilt) {
+        onTeamsBuilt(withKeys)
+      } else {
+        setTeams(withKeys)
+      }
       showToast(
         shuffle
-          ? `Teams rebuilt — ${fullRoster} services @ ${FULL_ROSTER_TEAM_SIZE} members (no Friday)`
-          : `Teams built — Sunday + Tuesday + Igaburo (${FULL_ROSTER_TEAM_SIZE} each; no Friday)`,
+          ? `Teams rebuilt for ${monthLabel} — ${fullRoster} services @ ${FULL_ROSTER_TEAM_SIZE} members (no Friday)`
+          : `Teams built for ${monthLabel} — Sunday + Tuesday + Igaburo (${FULL_ROSTER_TEAM_SIZE} each; no Friday)`,
       )
     } catch {
       showToast('Not enough protocol members to build teams')
@@ -225,15 +232,26 @@ export default function ServiceTeamsTab({
         <strong className="text-neutral-900">{protocolPool.length} protocol members</strong> in roster. Build engine
         fills <strong>Sunday and Tuesday services</strong> (and Igaburo) with{' '}
         <strong>{FULL_ROSTER_TEAM_SIZE} members</strong> each (team leader + vice included). Protocol does{' '}
-        <strong>not</strong> serve on Friday — those services are skipped.
+        <strong>not</strong> serve on Friday — those services are skipped. Works for any month after the calendar is
+        generated.
       </p>
       <div className="flex flex-wrap gap-2 pmss-no-print">
         {canEdit && (
           <>
-            <button type="button" className="pmss-btn-primary" onClick={() => runEngine(false)}>
+            <button
+              type="button"
+              className="pmss-btn-primary"
+              onClick={() => runEngine(false)}
+              disabled={!hasCalendar}
+            >
               Build service teams
             </button>
-            <button type="button" className="pmss-btn-secondary" onClick={() => runEngine(true)}>
+            <button
+              type="button"
+              className="pmss-btn-secondary"
+              onClick={() => runEngine(true)}
+              disabled={!hasCalendar}
+            >
               <RefreshCw className="w-4 h-4" /> Rebuild teams
             </button>
           </>
@@ -244,6 +262,20 @@ export default function ServiceTeamsTab({
           disabled={!teams.length}
         />
       </div>
+
+      {!hasCalendar && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-card px-4 py-3 pmss-no-print">
+          No services for <strong>{monthLabel}</strong> yet. Generate the monthly calendar first, then build teams for
+          that month.
+        </p>
+      )}
+
+      {hasCalendar && teams.length === 0 && (
+        <p className="text-sm text-neutral-600 border border-neutral-200 rounded-card px-4 py-3 pmss-no-print">
+          Calendar ready for <strong>{monthLabel}</strong> ({services.length} services). Click{' '}
+          <strong>Build service teams</strong> to assign protocol members.
+        </p>
+      )}
 
       {format !== 'bulletin' && (
         <div className="pmss-offscreen-export" aria-hidden="true">

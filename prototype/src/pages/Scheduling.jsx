@@ -31,6 +31,8 @@ import {
   downloadScheduleExcel,
   downloadSchedulePdf,
 } from '../lib/scheduleExport'
+import { buildMonthlyServices, monthLabelFromKey } from '../lib/monthlyCalendar'
+import { isFullRosterKind } from '../data/teamEngine'
 
 const TABS = [
   { id: 'calendar', label: 'Calendar', icon: Calendar },
@@ -84,6 +86,26 @@ export default function SchedulingPage() {
       }))
     },
     [choirRows, updatePayload],
+  )
+
+  const applyBuiltTeams = useCallback(
+    (builtTeams) => {
+      const cleaned = (builtTeams ?? []).map(({ _key, ...rest }) => rest)
+      const review = cleaned
+        .filter((t) => isFullRosterKind(t.kind))
+        .map((t) => ({
+          date: t.date,
+          tl: t.teamLeader,
+          vtl: t.viceTeamLeader,
+          status: 'Pending approval',
+        }))
+      updatePayload((p) => ({
+        ...p,
+        teamAssignments: cleaned,
+        leadershipReview: review,
+      }))
+    },
+    [updatePayload],
   )
 
   const [searchParams, setSearchParams] = useSearchParams()
@@ -172,27 +194,29 @@ export default function SchedulingPage() {
   }
 
   const generateMonthlyCalendar = () => {
-    const label = (() => {
-      try {
-        const [y, m] = calendarMonth.split('-').map(Number)
-        return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', {
-          month: 'long',
-          year: 'numeric',
-          timeZone: 'UTC',
-        })
-      } catch {
-        return calendarMonth
-      }
-    })()
+    if (!calendarMonth || !/^\d{4}-\d{2}$/.test(calendarMonth)) {
+      showToast('Select a month first')
+      return
+    }
+    const label = monthLabelFromKey(calendarMonth)
+    const generated = buildMonthlyServices(calendarMonth)
+    if (!generated.length) {
+      showToast('Could not build services for that month')
+      return
+    }
     updatePayload((p) => ({
       ...p,
       monthKey: calendarMonth,
       monthLabel: label,
-      services: (p.services ?? []).map((s) =>
-        String(s.date ?? '').startsWith(calendarMonth) ? { ...s, status: 'Scheduled' } : s,
-      ),
+      services: generated,
+      // Fresh month — choir/teams/leadership need rebuild for the new dates.
+      choirAssignments: [],
+      teamAssignments: [],
+      leadershipReview: [],
+      validationRows: [],
+      validationSummary: { passed: 0, warnings: 0, errors: 0, status: 'PENDING' },
     }))
-    showToast(`Monthly calendar generated for ${label}`)
+    showToast(`Monthly calendar generated for ${label} (${generated.length} services)`)
   }
 
   const selectTab = (id) => {
@@ -328,11 +352,20 @@ export default function SchedulingPage() {
               value={calendarMonth}
               onChange={(e) => setCalendarMonth(e.target.value)}
               className="pmss-input w-auto"
+              aria-label="Schedule month"
             />
             {canEdit && (
-            <button type="button" className="pmss-btn-primary" onClick={generateMonthlyCalendar}>
-              <Sparkles className="w-4 h-4" /> Generate monthly calendar
-            </button>
+              <button
+                type="button"
+                className="pmss-btn-primary"
+                onClick={generateMonthlyCalendar}
+                disabled={!calendarMonth}
+              >
+                <Sparkles className="w-4 h-4" /> Generate monthly calendar
+              </button>
+            )}
+            {!canEdit && (
+              <p className="text-sm text-neutral-500">Only schedule editors can generate a new month.</p>
             )}
           </div>
           <DataTable
@@ -347,6 +380,12 @@ export default function SchedulingPage() {
               },
             ]}
             rows={services.filter((s) => !calendarMonth || String(s.date ?? '').startsWith(calendarMonth))}
+            emptyTitle="No services for this month"
+            emptyDescription={
+              canEdit
+                ? 'Pick a month, then click Generate monthly calendar to create Sunday, Tuesday, Friday, and Igaburo services.'
+                : 'Ask a coordinator to generate the calendar for this month.'
+            }
           />
         </div>
       )}
@@ -355,9 +394,10 @@ export default function SchedulingPage() {
         <ChoirScheduleTab
           canEdit={canEdit}
           showToast={showToast}
-          controlledAssignments={USE_API ? choirRows : undefined}
-          onAssignmentsChange={USE_API ? setChoirRows : undefined}
-          monthLabel={payload.monthLabel ?? 'August 2026'}
+          controlledAssignments={choirRows}
+          onAssignmentsChange={setChoirRows}
+          services={services}
+          monthLabel={payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? calendarMonth)}
         />
       )}
 
@@ -365,10 +405,11 @@ export default function SchedulingPage() {
         <ServiceTeamsTab
           canEdit={canEdit}
           showToast={showToast}
-          controlledTeams={USE_API ? teamRows : undefined}
-          onTeamsChange={USE_API ? setTeamRows : undefined}
-          services={USE_API ? services : undefined}
-          monthLabel={payload.monthLabel ?? 'August 2026'}
+          controlledTeams={teamRows}
+          onTeamsChange={setTeamRows}
+          onTeamsBuilt={applyBuiltTeams}
+          services={services}
+          monthLabel={payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? calendarMonth)}
         />
       )}
 

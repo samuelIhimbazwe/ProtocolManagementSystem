@@ -69,3 +69,29 @@ export function regenerateChoirsForService(service, choirsCatalog) {
 export function allChoirOptions(choirsCatalog) {
   return [...choirsCatalog.special, ...choirsCatalog.primary, ...choirsCatalog.secondary]
 }
+
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** Format ISO date as bulletin-style "06 Sep". */
+export function formatChoirSlotDate(isoDate) {
+  const d = new Date(`${String(isoDate).slice(0, 10)}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return String(isoDate)
+  return `${String(d.getUTCDate()).padStart(2, '0')} ${MONTH_LABELS[d.getUTCMonth()]}`
+}
+
+/**
+ * Build choir assignments for every service in the monthly calendar.
+ * Works for any month once the calendar has been generated.
+ */
+export function buildMonthlyChoirAssignments(services, choirsCatalog) {
+  return [...(services ?? [])]
+    .filter((s) => s?.name && s?.date)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.name).localeCompare(String(b.name)))
+    .map((s) => ({
+      service: s.name,
+      date: formatChoirSlotDate(s.date),
+      serviceDate: s.date,
+      choirs: regenerateChoirsForService(s.name, choirsCatalog),
+      status: 'Assigned',
+    }))
+}

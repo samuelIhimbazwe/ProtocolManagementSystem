@@ -10,11 +10,12 @@ import ChoirServiceToolbar from '../../components/ChoirServiceToolbar'
 import Modal from '../../components/Modal'
 import {
   allChoirOptions,
+  buildMonthlyChoirAssignments,
   joinChoirList,
   parseChoirList,
   regenerateChoirsForService,
 } from '../../components/ChoirCardActions'
-import { CHOIR_ASSIGNMENTS, CHOIRS } from '../../data/mock'
+import { CHOIRS } from '../../data/mock'
 import {
   downloadChoirScheduleCsv,
   downloadChoirScheduleExcel,
@@ -32,12 +33,11 @@ export default function ChoirScheduleTab({
   showToast,
   controlledAssignments,
   onAssignmentsChange,
+  services = [],
   monthLabel = 'August 2026',
 }) {
   const [format, setFormat] = useDisplayFormat('pmss-view-choir', 'cards')
-  const [internal, setInternal] = useState(() =>
-    CHOIR_ASSIGNMENTS.map((c, i) => ({ ...c, _key: choirKey(c, i) })),
-  )
+  const [internal, setInternal] = useState([])
   const assignments = controlledAssignments ?? internal
   const setAssignments = onAssignmentsChange ?? setInternal
   const [modal, setModal] = useState(null)
@@ -47,6 +47,17 @@ export default function ChoirScheduleTab({
   const [removeChoirPick, setRemoveChoirPick] = useState('')
 
   const choirOptions = useMemo(() => allChoirOptions(CHOIRS), [])
+  const hasCalendar = (services?.length ?? 0) > 0
+
+  const generateFromCalendar = () => {
+    if (!hasCalendar) {
+      showToast('Generate the monthly calendar first for the month you want')
+      return
+    }
+    const rows = buildMonthlyChoirAssignments(services, CHOIRS)
+    setAssignments(rows.map((c, i) => ({ ...c, _key: choirKey(c, i) })))
+    showToast(`Choir schedule generated for ${monthLabel} (${rows.length} services)`)
+  }
 
   const active = modal != null ? assignments[modal.index] : null
 
@@ -149,14 +160,18 @@ export default function ChoirScheduleTab({
   }
 
   const regenerateAll = () => {
-    setAssignments((prev) =>
-      prev.map((row) => ({
-        ...row,
-        choirs: regenerateChoirsForService(row.service, CHOIRS),
-        status: 'Assigned',
-      })),
-    )
-    showToast('Full choir schedule regenerated')
+    if (!hasCalendar) {
+      generateFromCalendar()
+      return
+    }
+    if (!assignments.length) {
+      generateFromCalendar()
+      return
+    }
+    // Prefer rebuilding from the current month calendar so dates stay in sync.
+    const rows = buildMonthlyChoirAssignments(services, CHOIRS)
+    setAssignments(rows.map((c, i) => ({ ...c, _key: choirKey(c, i) })))
+    showToast(`Choir schedule regenerated for ${monthLabel}`)
   }
 
   const downloadSchedule = async (format) => {
@@ -219,14 +234,17 @@ export default function ChoirScheduleTab({
             <button
               type="button"
               className="pmss-btn-primary"
-              onClick={() => {
-                setAssignments(CHOIR_ASSIGNMENTS.map((c, i) => ({ ...c, _key: choirKey(c, i) })))
-                showToast('Choir schedule generated')
-              }}
+              onClick={generateFromCalendar}
+              disabled={!hasCalendar}
             >
               Generate choir schedule
             </button>
-            <button type="button" className="pmss-btn-secondary" onClick={regenerateAll}>
+            <button
+              type="button"
+              className="pmss-btn-secondary"
+              onClick={regenerateAll}
+              disabled={!hasCalendar}
+            >
               <RefreshCw className="w-4 h-4" /> Regenerate schedule
             </button>
           </>
@@ -236,6 +254,20 @@ export default function ChoirScheduleTab({
           disabled={assignments.length === 0}
         />
       </div>
+
+      {!hasCalendar && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-card px-4 py-3 pmss-no-print">
+          No services for <strong>{monthLabel}</strong> yet. Open the Calendar tab, pick an upcoming month, and
+          generate the monthly calendar first — then you can build choir and teams for that month.
+        </p>
+      )}
+
+      {hasCalendar && assignments.length === 0 && (
+        <p className="text-sm text-neutral-600 bg-primary-50 border border-primary-100 rounded-card px-4 py-3 pmss-no-print">
+          Calendar ready for <strong>{monthLabel}</strong> ({services.length} services). Click{' '}
+          <strong>Generate choir schedule</strong> to assign choirs for this month.
+        </p>
+      )}
 
       {format !== 'bulletin' && (
         <div className="pmss-offscreen-export" aria-hidden="true">

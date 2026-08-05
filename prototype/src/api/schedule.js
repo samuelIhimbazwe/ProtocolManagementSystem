@@ -37,6 +37,10 @@ export async function updateMember(id, body) {
   return apiFetch(`/members/${id}`, { method: 'PATCH', body })
 }
 
+export async function importMembers(body) {
+  return apiFetch('/members/import', { method: 'POST', body })
+}
+
 export async function fetchRules() {
   return apiFetch('/settings/rules')
 }
@@ -51,6 +55,10 @@ export async function inviteUser(body) {
 
 export async function createUser(body) {
   return apiFetch('/users', { method: 'POST', body: { ...body, mode: 'create' } })
+}
+
+export async function bulkCreateUsersFromRoster(body) {
+  return apiFetch('/users/bulk-from-roster', { method: 'POST', body })
 }
 
 export async function patchUser(id, body) {
@@ -74,6 +82,15 @@ export async function submitAttendanceSession(sessionId) {
 
 export async function fetchAttendanceSessions() {
   return apiFetch('/attendance/sessions')
+}
+
+export async function fetchAttendanceOverview(month) {
+  const q = month ? `?month=${encodeURIComponent(month)}` : ''
+  return apiFetch(`/attendance/overview${q}`)
+}
+
+export async function fetchAttendanceSessionDetail(sessionOrServiceId) {
+  return apiFetch(`/attendance/sessions/${encodeURIComponent(sessionOrServiceId)}`)
 }
 
 export async function fetchMyAttendanceHistory() {
