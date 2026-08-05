@@ -57,6 +57,9 @@
 
   --pmss-btn-bg: rgb(var(--pmss-primary-600));
   --pmss-btn-bg-hover: rgb(var(--pmss-primary-700));
+
+  --pmss-page-title: rgb(var(--pmss-primary-800));
+  --pmss-page-subtitle: rgb(var(--pmss-primary-600));
 }
 
 /* Option B — Flower-inspired cream, gold, taupe */
@@ -102,6 +105,9 @@
 
   --pmss-btn-bg: rgb(var(--pmss-primary-600));
   --pmss-btn-bg-hover: #333333;
+
+  --pmss-page-title: var(--pmss-gold);
+  --pmss-page-subtitle: rgb(var(--pmss-accent-700));
 }
 
 /* ——— Dark mode (works with both brand themes) ——— */
@@ -157,6 +163,9 @@
   --pmss-outline-accent-hover: #15251c;
 
   --pmss-focus-ring: rgb(143 168 196 / 0.4);
+
+  --pmss-page-title: rgb(var(--pmss-primary-800));
+  --pmss-page-subtitle: rgb(var(--pmss-primary-600));
 }
 
 [data-color-mode='dark'][data-theme='b'],
@@ -188,4 +197,7 @@
 
   --pmss-btn-bg: #c4a035;
   --pmss-btn-bg-hover: #d9bc5c;
+
+  --pmss-page-title: var(--pmss-gold);
+  --pmss-page-subtitle: rgb(var(--pmss-accent-700));
 }
