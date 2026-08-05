@@ -70,10 +70,14 @@ router.post('/', authMiddleware, async (req, res) => {
 
   const maxId = (await db.prepare(`SELECT MAX(CAST(id AS INTEGER)) AS m FROM members`).get()).m ?? 0
   const id = String(maxId + 1)
+  const choirValue =
+    choir == null || String(choir).trim() === '' || String(choir).toLowerCase() === 'none'
+      ? null
+      : String(choir).trim()
   await db.prepare(
     `INSERT INTO members (id, name, phone, role, status, attendance_rate, choir)
      VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-  ).run(id, String(name).trim(), phone ?? null, role, status ?? 'Active', choir ?? null)
+  ).run(id, String(name).trim(), phone ?? null, role, status ?? 'Active', choirValue)
   await audit('members.create', req.auth.sub, { memberId: id })
   const row = await db.prepare(`SELECT * FROM members WHERE id = ?`).get(id)
   return res.status(201).json({ member: mapMember(row) })
@@ -87,20 +91,36 @@ router.patch('/:id', authMiddleware, async (req, res) => {
   if (!row) return res.status(404).json({ error: 'Member not found' })
 
   const { name, phone, role, choir, status } = req.body ?? {}
+  const body = req.body ?? {}
+  const choirProvided = Object.prototype.hasOwnProperty.call(body, 'choir')
+  const phoneProvided = Object.prototype.hasOwnProperty.call(body, 'phone')
+  const choirValue = !choirProvided
+    ? null
+    : choir == null || String(choir).trim() === '' || String(choir).toLowerCase() === 'none'
+      ? null
+      : String(choir).trim()
+  const phoneValue = !phoneProvided
+    ? null
+    : phone == null || String(phone).trim() === ''
+      ? null
+      : String(phone).trim()
+
   await db.prepare(
     `UPDATE members SET
       name = COALESCE(?, name),
-      phone = COALESCE(?, phone),
+      phone = CASE WHEN ? = 1 THEN ? ELSE phone END,
       role = COALESCE(?, role),
-      choir = COALESCE(?, choir),
+      choir = CASE WHEN ? = 1 THEN ? ELSE choir END,
       status = COALESCE(?, status),
       updated_at = datetime('now')
      WHERE id = ?`,
   ).run(
     name != null ? String(name).trim() : null,
-    phone ?? null,
+    phoneProvided ? 1 : 0,
+    phoneValue,
     role ?? null,
-    choir ?? null,
+    choirProvided ? 1 : 0,
+    choirValue,
     status ?? null,
     req.params.id,
   )
