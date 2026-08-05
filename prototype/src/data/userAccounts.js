@@ -16,7 +16,7 @@ function emailFromName(name) {
   return `${base}@church.internal`
 }
 
-/** Demo PMSS login accounts — linked to roster via memberId. */
+/** Demo TMS login accounts — linked to roster via memberId. */
 export function buildDefaultUserAccounts() {
   const leadership = MEMBERS.filter((m) => m.role !== 'Member').map((m, i) => ({
     id: `u-lead-${m.id}`,

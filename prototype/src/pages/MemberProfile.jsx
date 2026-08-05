@@ -163,7 +163,7 @@ export default function MemberProfilePage() {
             <Field label="Email" value={member.email ?? '—'} />
             <Field label="Phone" value={member.phone ?? '—'} />
             {linkedAccount && (
-              <Field label="PMSS login" value={`${linkedAccount.username} · ${linkedAccount.status}`} />
+              <Field label="TMS login" value={`${linkedAccount.username} · ${linkedAccount.status}`} />
             )}
           </div>
         </Section>

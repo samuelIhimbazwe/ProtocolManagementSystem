@@ -1,4 +1,4 @@
-# PMSS — Protocol Management & Scheduling System
+# TMS — Time Table Management System
 
 Internal church **protocol ministry** app: roster, scheduling, attendance, and role-based access.
 
