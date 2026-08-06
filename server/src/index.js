@@ -77,7 +77,7 @@ app.use((err, _req, res, _next) => {
 
 app.listen(port, () => {
   const mode = serveWeb ? 'API + web UI' : 'API only'
-  console.log(`TMS listening on http://localhost:${port} (${mode})`)
+  console.log(`PMSS listening on http://localhost:${port} (${mode})`)
   if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'change-me-in-production')) {
     console.warn('WARNING: Set a strong JWT_SECRET in production.')
   }

@@ -146,7 +146,7 @@ async function openDatabase() {
     pool.on('error', (err) => {
       console.error('Unexpected Postgres pool error', err)
     })
-    console.log('TMS database: Postgres (DATABASE_URL)')
+    console.log('PMSS database: Postgres (DATABASE_URL)')
     return createPgDb(pool)
   }
 
@@ -157,7 +157,7 @@ async function openDatabase() {
   const syncDb = new DatabaseSync(dbPath)
   syncDb.exec('PRAGMA journal_mode = WAL')
   syncDb.exec('PRAGMA foreign_keys = ON')
-  console.log(`TMS database: SQLite (${dbPath})`)
+  console.log(`PMSS database: SQLite (${dbPath})`)
   return createSqliteDb(syncDb)
 }
 

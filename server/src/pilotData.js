@@ -144,10 +144,37 @@ function phoneForIndex(i) {
   return `+250 78${String(1000000 + i).slice(-7)}`
 }
 
+/** Login-style local-part from a display name: "Jean Bosco Ndayisaba" → "j.ndayisaba" */
+export function usernameFromName(name) {
+  const parts = String(name ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+  if (parts.length >= 2) return `${parts[0][0]}.${parts[parts.length - 1]}`.replace(/[^a-z.]/g, '')
+  return parts[0]?.replace(/[^a-z]/g, '') ?? 'user'
+}
+
+/** Unique @church.internal email for a roster name. */
+export function emailFromName(name, used = new Set()) {
+  const base = usernameFromName(name) || 'member'
+  let email = `${base}@church.internal`
+  let n = 2
+  while (used.has(email.toLowerCase())) {
+    email = `${base}${n}@church.internal`
+    n += 1
+  }
+  used.add(email.toLowerCase())
+  return email
+}
+
 export function buildMemberRows() {
+  const usedEmails = new Set()
   const admin = ADMIN_ROSTER.map((a, i) => ({
     id: a.id,
     name: a.name,
+    email: emailFromName(a.name, usedEmails),
     phone: phoneForIndex(i),
     role: a.role,
     status: 'Active',
@@ -157,6 +184,7 @@ export function buildMemberRows() {
   const protocol = PROTOCOL_NAMES.map((name, i) => ({
     id: String(6 + i),
     name,
+    email: emailFromName(name, usedEmails),
     phone: phoneForIndex(10 + i),
     role: 'Member',
     status: 'Active',

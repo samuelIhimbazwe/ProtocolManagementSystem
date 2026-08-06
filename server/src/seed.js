@@ -9,16 +9,14 @@ import {
   PILOT_CHOIR_ASSIGNMENTS,
   PILOT_SERVICES,
   buildMemberRows,
+  emailFromName,
   protocolNamePool,
+  usernameFromName,
 } from './pilotData.js'
 
 export const SEED_PASSWORD = 'Password123!'
 
-function usernameFromName(name) {
-  const parts = name.toLowerCase().split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) return `${parts[0][0]}.${parts[parts.length - 1]}`.replace(/[^a-z.]/g, '')
-  return parts[0]?.replace(/[^a-z]/g, '') ?? 'user'
-}
+export { usernameFromName }
 
 export async function buildDefaultSchedulePayload(members) {
   const pool = protocolNamePool(members)
@@ -53,11 +51,50 @@ async function seedMembers(force) {
   if (count > 0 && !force) return
 
   const insert = db.prepare(`
-    INSERT INTO members (id, name, phone, role, status, attendance_rate, choir)
-    VALUES (@id, @name, @phone, @role, @status, @attendance_rate, @choir)
+    INSERT INTO members (id, name, email, phone, role, status, attendance_rate, choir)
+    VALUES (@id, @name, @email, @phone, @role, @status, @attendance_rate, @choir)
   `)
   for (const m of buildMemberRows()) {
     await insert.run(m)
+  }
+}
+
+/** Fill missing roster emails so Create member accounts can select everyone. */
+async function ensureMemberEmails() {
+  const linkedEmails = await db
+    .prepare(`SELECT member_id, email FROM users WHERE member_id IS NOT NULL AND email IS NOT NULL`)
+    .all()
+  const emailByMember = new Map(
+    linkedEmails.map((r) => [String(r.member_id), String(r.email).trim().toLowerCase()]),
+  )
+
+  const members = await db.prepare(`SELECT id, name, email FROM members`).all()
+  const used = new Set(
+    members
+      .map((m) => String(m.email ?? '').trim().toLowerCase())
+      .filter(Boolean),
+  )
+  for (const e of emailByMember.values()) {
+    if (e) used.add(e)
+  }
+
+  let updated = 0
+  for (const m of members) {
+    const current = String(m.email ?? '').trim()
+    if (current) continue
+
+    const fromUser = emailByMember.get(String(m.id))
+    let email = fromUser || null
+    if (!email) {
+      const claim = new Set(used)
+      email = emailFromName(m.name, claim)
+    }
+    used.add(email)
+    await db.prepare(`UPDATE members SET email = ?, updated_at = datetime('now') WHERE id = ?`).run(email, m.id)
+    updated += 1
+  }
+  if (updated > 0) {
+    console.log('Backfilled email on %d roster member(s).', updated)
   }
 }
 
@@ -66,6 +103,7 @@ export async function seedDatabase({ force = false } = {}) {
   await ensureDefaultRules()
 
   await seedMembers(force)
+  await ensureMemberEmails()
 
   const userCount = (await db.prepare(`SELECT COUNT(*) AS c FROM users`).get()).c
   if (userCount > 0 && !force) {
