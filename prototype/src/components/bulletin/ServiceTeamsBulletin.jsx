@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import BulletinChurchHeader from './BulletinChurchHeader'
+import BulletinEditable from './BulletinEditable'
 import {
   groupTeamsByWeek,
   protocolServiceTitle,
@@ -41,48 +42,7 @@ function monthNumberFromLabel(monthLabel) {
   return 8
 }
 
-/** Inline editable text — click to edit; commits on blur. */
-export function BulletinEditable({
-  as: Comp = 'span',
-  value = '',
-  onChange,
-  className = '',
-  disabled = false,
-  multiline = false,
-  placeholder = '',
-}) {
-  if (disabled || !onChange) {
-    return <Comp className={className}>{value || placeholder}</Comp>
-  }
-
-  return (
-    <Comp
-      key={value}
-      className={`pmss-bulletin-editable ${className}`}
-      contentEditable
-      suppressContentEditableWarning
-      role="textbox"
-      aria-multiline={multiline || undefined}
-      data-placeholder={placeholder}
-      onBlur={(e) => {
-        const next = (multiline ? e.currentTarget.innerText : e.currentTarget.textContent)?.replace(
-          /\u00a0/g,
-          ' ',
-        )
-        const trimmed = String(next ?? '').replace(/\n+$/, '')
-        if (trimmed !== value) onChange(trimmed)
-      }}
-      onKeyDown={(e) => {
-        if (!multiline && e.key === 'Enter') {
-          e.preventDefault()
-          e.currentTarget.blur()
-        }
-      }}
-    >
-      {value}
-    </Comp>
-  )
-}
+export { BulletinEditable }
 
 /** TL first, V/s TL second, then remaining members — matches printed ADEPR bulletins. */
 export function orderedBulletinMembers(team) {
@@ -112,9 +72,11 @@ function ServiceBlock({
   team,
   titleOverride,
   memberOverrides,
+  roleOverrides,
   canEdit,
   onTitleChange,
   onMemberChange,
+  onRoleChange,
 }) {
   const parts = teamBulletinDate(team)
   const defaultTitle = protocolServiceTitle(team, parts)
@@ -137,7 +99,7 @@ function ServiceBlock({
       <ol className="pmss-bulletin-member-list">
         {slots.map((name, i) => {
           const display = memberOverrides?.[i] ?? name
-          const role = roleLabelForSlot(i)
+          const role = roleOverrides?.[i] ?? roleLabelForSlot(i)
           return (
             <li key={`${team._key ?? team.date}-${i}`}>
               <BulletinEditable
@@ -147,7 +109,16 @@ function ServiceBlock({
                 disabled={!canEdit}
                 className="pmss-bulletin-member-name"
               />
-              {role ? <strong className="pmss-bulletin-role">{role}</strong> : null}
+              {(role || canEdit) && (
+                <strong className="pmss-bulletin-role">
+                  <BulletinEditable
+                    value={role}
+                    placeholder=" "
+                    onChange={canEdit ? (v) => onRoleChange(i, v) : undefined}
+                    disabled={!canEdit}
+                  />
+                </strong>
+              )}
             </li>
           )
         })}
@@ -164,8 +135,10 @@ function WeekColumn({
   onHeadingChange,
   titleOverrides,
   memberOverrides,
+  roleOverrides,
   onTitleChange,
   onMemberChange,
+  onRoleChange,
 }) {
   const defaultLabel = RW_WEEK[weekIndex + 1] ?? `ICYUMWERU ${(weekIndex + 1)}`
   const label = headingOverride ?? defaultLabel
@@ -190,9 +163,11 @@ function WeekColumn({
               team={team}
               titleOverride={titleOverrides[key]}
               memberOverrides={memberOverrides[key]}
+              roleOverrides={roleOverrides[key]}
               canEdit={canEdit}
               onTitleChange={(v) => onTitleChange(key, v)}
               onMemberChange={(slot, v) => onMemberChange(key, team, slot, v)}
+              onRoleChange={(slot, v) => onRoleChange(key, slot, v)}
             />
           )
         })
@@ -220,6 +195,7 @@ export default function ServiceTeamsBulletin({
   const [headings, setHeadings] = useState({})
   const [titleOverrides, setTitleOverrides] = useState({})
   const [memberOverrides, setMemberOverrides] = useState({})
+  const [roleOverrides, setRoleOverrides] = useState({})
   const [footerLines, setFooterLines] = useState([
     `Byateguwe na Minisiteri ya Protocole · ${monthLabel}`,
     "Byagenzuwe n'Umuyobozi w'Itorero",
@@ -334,8 +310,15 @@ export default function ServiceTeamsBulletin({
                   onHeadingChange={(v) => setHeadings((h) => ({ ...h, [weekKey]: v }))}
                   titleOverrides={titleOverrides}
                   memberOverrides={memberOverrides}
+                  roleOverrides={roleOverrides}
                   onTitleChange={(key, v) => setTitleOverrides((t) => ({ ...t, [key]: v }))}
                   onMemberChange={patchTeamMembers}
+                  onRoleChange={(key, slot, v) =>
+                    setRoleOverrides((prev) => ({
+                      ...prev,
+                      [key]: { ...(prev[key] ?? {}), [slot]: v },
+                    }))
+                  }
                 />
               )
             })}

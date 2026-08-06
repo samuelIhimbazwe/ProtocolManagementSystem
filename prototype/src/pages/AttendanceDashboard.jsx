@@ -292,6 +292,7 @@ export default function AttendanceDashboardPage() {
                 showSessionDetail={false}
                 personalHistory={personalHistory}
                 member={roleId === 'member' ? member : null}
+                canEdit={false}
               />
             </div>
           )}
@@ -304,6 +305,7 @@ export default function AttendanceDashboardPage() {
               showSessionDetail={false}
               personalHistory={personalHistory}
               member={roleId === 'member' ? member : null}
+              canEdit
             />
           ) : format === 'list' ? (
             <>

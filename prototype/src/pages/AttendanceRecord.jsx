@@ -241,6 +241,7 @@ export default function AttendanceRecordPage() {
           serviceType={serviceMeta.serviceType}
           serviceDate={serviceMeta.serviceDate}
           rows={bulletinRows}
+          canEdit
         />
       ) : format === 'list' ? (
         <>
