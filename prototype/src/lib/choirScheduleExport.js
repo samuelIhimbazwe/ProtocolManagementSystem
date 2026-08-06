@@ -50,7 +50,7 @@ export function downloadChoirScheduleCsv(
   const name = filename ?? `${exportBasename(monthLabel)}.csv`
 
   const lines = [
-    `# TMS Choir Schedule — ${monthLabel}`,
+    `# PMSS Choir Schedule — ${monthLabel}`,
     'Date,Service,Status,Choirs',
     ...rows.map((r) => [r.date, r.service, r.status, r.choirs].map(escapeCsvCell).join(',')),
   ]
@@ -78,7 +78,7 @@ export function downloadChoirScheduleExcel(
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
 <head><meta charset="utf-8"><title>Choir Schedule</title></head>
 <body>
-  <h2>TMS Choir Schedule — ${escapeHtml(monthLabel)}</h2>
+  <h2>PMSS Choir Schedule — ${escapeHtml(monthLabel)}</h2>
   <table border="1">
     <thead><tr><th>Date</th><th>Service</th><th>Status</th><th>Choirs</th></tr></thead>
     <tbody>${tableRows}</tbody>
@@ -105,7 +105,7 @@ export async function downloadChoirSchedulePdf(
   const html = `
   <div style="font-family:system-ui,sans-serif;color:#111">
     <h1 style="font-size:18px;margin:0 0 4px">Choir schedule</h1>
-    <p style="font-size:12px;color:#555;margin:0 0 20px">${escapeHtml(monthLabel)} · TMS</p>
+    <p style="font-size:12px;color:#555;margin:0 0 20px">${escapeHtml(monthLabel)} · PMSS</p>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr>
         <th style="border:1px solid #333;padding:6px 8px;background:#eef2f6;text-align:left">Date</th>

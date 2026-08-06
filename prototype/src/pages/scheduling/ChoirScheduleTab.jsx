@@ -271,11 +271,22 @@ export default function ChoirScheduleTab({
 
       {format !== 'bulletin' && (
         <div className="pmss-offscreen-export" aria-hidden="true">
-          <ChoirScheduleBulletin id="choir-bulletin" assignments={assignments} />
+          <ChoirScheduleBulletin
+            id="choir-bulletin"
+            assignments={assignments}
+            monthLabel={monthLabel}
+            canEdit={false}
+          />
         </div>
       )}
       {format === 'bulletin' ? (
-        <ChoirScheduleBulletin id="choir-bulletin" assignments={assignments} />
+        <ChoirScheduleBulletin
+          id="choir-bulletin"
+          assignments={assignments}
+          monthLabel={monthLabel}
+          canEdit={canEdit}
+          onAssignmentsChange={setAssignments}
+        />
       ) : format === 'list' ? (
         <ChoirScheduleList
           assignments={assignments}

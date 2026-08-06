@@ -47,7 +47,7 @@ export function downloadServiceTeamsCsv(teams, { filename, monthLabel = 'August 
   const rows = buildServiceTeamExportRows(teams)
   const name = filename ?? `${exportBasename(monthLabel)}.csv`
   const lines = [
-    `# TMS Service Teams — ${monthLabel}`,
+    `# PMSS Service Teams — ${monthLabel}`,
     'Date,Service,Kind,Size,Team leader,Vice team leader,Members',
     ...rows.map((r) =>
       [r.date, r.service, r.kind, r.size, r.teamLeader, r.viceTeamLeader, r.members]
@@ -73,7 +73,7 @@ export function downloadServiceTeamsExcel(teams, { filename, monthLabel = 'Augus
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
 <head><meta charset="utf-8"><title>Service Teams</title></head>
 <body>
-  <h2>TMS Service Teams — ${escapeHtml(monthLabel)}</h2>
+  <h2>PMSS Service Teams — ${escapeHtml(monthLabel)}</h2>
   <table border="1">
     <thead><tr><th>Date</th><th>Service</th><th>Kind</th><th>Size</th><th>Team leader</th><th>Vice team leader</th><th>Members</th></tr></thead>
     <tbody>${tableRows}</tbody>
@@ -109,7 +109,7 @@ export async function downloadServiceTeamsPdf(teams, { monthLabel = 'August 2026
   const html = `
   <div style="font-family:system-ui,sans-serif;color:#111">
     <h1 style="font-size:18px;margin:0 0 4px">Service teams</h1>
-    <p style="font-size:12px;color:#555;margin:0 0 20px">${escapeHtml(monthLabel)} · TMS</p>
+    <p style="font-size:12px;color:#555;margin:0 0 20px">${escapeHtml(monthLabel)} · PMSS</p>
     ${blocks || '<p>No teams to export.</p>'}
   </div>`
 

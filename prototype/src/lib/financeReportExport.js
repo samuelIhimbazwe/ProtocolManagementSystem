@@ -2,7 +2,7 @@ import { downloadBlob } from './choirScheduleExport'
 import { formatRwf } from './money'
 import { downloadDocumentHtmlAsPdf } from './bulletinPdf.js'
 
-const DEFAULT_TITLE = 'TMS Finance Report'
+const DEFAULT_TITLE = 'PMSS Finance Report'
 
 const MONEY_HEADERS = new Set([
   'ministryGoal',

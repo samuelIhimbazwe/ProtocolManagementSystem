@@ -1,7 +1,7 @@
 import { downloadBlob } from './choirScheduleExport'
 import { downloadDocumentHtmlAsPdf } from './bulletinPdf.js'
 
-const DEFAULT_TITLE = 'TMS Ministry Report'
+const DEFAULT_TITLE = 'PMSS Ministry Report'
 
 function escapeCsvCell(value) {
   const s = String(value ?? '')
