@@ -159,9 +159,8 @@
   }
 
   .pmss-auth-title {
-    @apply text-xl md:text-2xl font-bold tracking-[0.06em] uppercase;
+    @apply text-xl md:text-2xl font-bold tracking-[0.06em] uppercase text-neutral-900;
     letter-spacing: 0.06em;
-    color: var(--pmss-page-title);
   }
 
   .pmss-auth-label {
@@ -334,26 +333,12 @@
     @apply mb-8;
   }
 
-  .pmss-page-heading {
-    border-color: #f97316;
-  }
-
-  .pmss-page-title {
-    color: #ea580c;
-  }
-
-  .pmss-page-description {
-    color: rgb(194 65 12 / 0.85);
-  }
-
   .pmss-login-heading {
-    @apply text-[1.65rem] md:text-[1.85rem] font-semibold tracking-tight;
-    color: #ea580c;
+    @apply text-[1.65rem] md:text-[1.85rem] font-semibold tracking-tight text-neutral-900;
   }
 
   .pmss-login-lead {
-    @apply mt-2 text-sm leading-relaxed;
-    color: rgb(194 65 12 / 0.85);
+    @apply mt-2 text-sm text-neutral-500 leading-relaxed;
   }
 
   .pmss-login-form {
@@ -986,8 +971,7 @@
   }
 
   [data-theme='b'] .pmss-auth-title {
-    @apply font-display font-normal normal-case;
-    color: var(--pmss-page-title);
+    @apply font-display font-normal normal-case text-neutral-900;
     font-size: clamp(2.5rem, 8vw, 3.25rem);
     line-height: 1.05;
     letter-spacing: 0.01em;
@@ -1066,20 +1050,14 @@
     @apply bg-neutral-100 text-neutral-900;
   }
 
-  [data-theme='b'] .pmss-page-heading {
-    border-color: #fb923c;
-  }
-
   [data-theme='b'] .pmss-page-title {
-    @apply font-display font-normal;
-    color: #ea580c;
+    @apply font-display font-normal text-neutral-900;
     font-size: clamp(1.85rem, 4vw, 2.35rem);
     line-height: 1.1;
   }
 
   [data-theme='b'] .pmss-page-description {
-    @apply uppercase text-[11px] tracking-[0.16em] font-medium;
-    color: rgb(194 65 12 / 0.9);
+    @apply uppercase text-[11px] tracking-[0.16em] text-neutral-500 font-medium;
   }
 
   [data-theme='b'] .pmss-stat-label,

@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { LayoutGrid, List, Newspaper } from 'lucide-react'
+import BulletinEditable from './bulletin/BulletinEditable'
 
 export default function DisplayFormatToggle({ format, onChange }) {
   return (
@@ -40,29 +42,76 @@ export default function DisplayFormatToggle({ format, onChange }) {
   )
 }
 
-export function BulletinDocument({ id, title, subtitle, children, footer }) {
+export function BulletinDocument({ id, title, subtitle, children, footer, canEdit = false }) {
+  const [docTitle, setDocTitle] = useState(title)
+  const [docSubtitle, setDocSubtitle] = useState(subtitle ?? '')
+  const [docFooter, setDocFooter] = useState(footer ?? '')
+  const [brand, setBrand] = useState('Protocol Ministry')
+
+  useEffect(() => setDocTitle(title), [title])
+  useEffect(() => setDocSubtitle(subtitle ?? ''), [subtitle])
+  useEffect(() => setDocFooter(footer ?? ''), [footer])
+
   return (
     <article id={id} className="pmss-bulletin">
+      {canEdit && (
+        <p className="pmss-bulletin-edit-hint pmss-no-print">
+          Click any text to edit — titles, section headings, table cells, and footer.
+        </p>
+      )}
       <header className="pmss-bulletin-header text-center border-b-2 border-neutral-900 pb-4 mb-6">
-        <p className="text-xs uppercase tracking-[0.2em] text-neutral-500 font-semibold">Protocol Ministry</p>
-        <h2 className="text-xl md:text-2xl font-bold text-neutral-900 mt-1 font-serif">{title}</h2>
-        {subtitle && <p className="text-sm text-neutral-600 mt-2">{subtitle}</p>}
+        <p className="text-xs uppercase tracking-[0.2em] text-neutral-500 font-semibold">
+          <BulletinEditable
+            value={brand}
+            onChange={canEdit ? setBrand : undefined}
+            disabled={!canEdit}
+          />
+        </p>
+        <h2 className="text-xl md:text-2xl font-bold text-neutral-900 mt-1 font-serif">
+          <BulletinEditable
+            value={docTitle}
+            onChange={canEdit ? setDocTitle : undefined}
+            disabled={!canEdit}
+          />
+        </h2>
+        {(docSubtitle || canEdit) && (
+          <p className="text-sm text-neutral-600 mt-2">
+            <BulletinEditable
+              value={docSubtitle}
+              onChange={canEdit ? setDocSubtitle : undefined}
+              disabled={!canEdit}
+              placeholder="Subtitle"
+            />
+          </p>
+        )}
       </header>
       <div className="pmss-bulletin-body">{children}</div>
-      {footer && (
+      {(docFooter || canEdit) && (
         <footer className="pmss-bulletin-footer mt-8 pt-4 border-t border-neutral-300 text-xs text-neutral-500 text-center">
-          {footer}
+          <BulletinEditable
+            value={docFooter}
+            onChange={canEdit ? setDocFooter : undefined}
+            disabled={!canEdit}
+            placeholder="Footer"
+          />
         </footer>
       )}
     </article>
   )
 }
 
-export function BulletinSection({ title, children }) {
+export function BulletinSection({ title, children, canEdit = false }) {
+  const [sectionTitle, setSectionTitle] = useState(title)
+  useEffect(() => setSectionTitle(title), [title])
+
   return (
     <section className="mb-6 break-inside-avoid">
       <h3 className="text-sm font-bold uppercase tracking-wide border-b border-neutral-400 pb-1 mb-3 font-serif">
-        {title}
+        <BulletinEditable
+          value={sectionTitle}
+          onChange={canEdit ? setSectionTitle : undefined}
+          disabled={!canEdit}
+        />
       </h3>
       {children}
     </section>
