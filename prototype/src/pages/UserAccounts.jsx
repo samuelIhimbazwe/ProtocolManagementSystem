@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { KeyRound, MailPlus, UserPlus, UserCheck, UserX, Users } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, MailPlus, UserPlus, UserCheck, UserX, Users } from 'lucide-react'
 import { PageHeader, DataTable, Badge } from '../layouts/AppShell'
 import Modal from '../components/Modal'
 import MembersSubnav from '../components/MembersSubnav'
@@ -17,6 +17,45 @@ import {
 import { USE_API } from '../api/config'
 import { fetchUserAccounts } from '../api/client'
 import { inviteUser, createUser, patchUser, fetchMembers, bulkCreateUsersFromRoster } from '../api/schedule'
+
+/** Password field with show/hide — uses standard pmss-input styling. */
+function PasswordField({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  autoComplete = 'new-password',
+  visible,
+  onToggleVisible,
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-neutral-700 mb-1.5">
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={visible ? 'text' : 'password'}
+          className="pmss-input pr-10"
+          value={value}
+          onChange={onChange}
+          autoComplete={autoComplete}
+          placeholder={placeholder}
+        />
+        <button
+          type="button"
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100"
+          onClick={onToggleVisible}
+          aria-label={visible ? 'Hide password' : 'Show password'}
+        >
+          {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function mapApiUser(u) {
   return {
@@ -70,9 +109,13 @@ export default function UserAccountsPage() {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [bulkOpen, setBulkOpen] = useState(false)
-  const [bulkPassword, setBulkPassword] = useState('Password123!')
-  const [bulkConfirm, setBulkConfirm] = useState('Password123!')
+  const [bulkPassword, setBulkPassword] = useState('')
+  const [bulkConfirm, setBulkConfirm] = useState('')
+  const [bulkShowPassword, setBulkShowPassword] = useState(false)
+  const [createShowPassword, setCreateShowPassword] = useState(false)
   const [bulkResult, setBulkResult] = useState(null)
+  const [bulkSelected, setBulkSelected] = useState(() => new Set())
+  const [bulkFilter, setBulkFilter] = useState('')
   const [form, setForm] = useState(emptyForm)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
@@ -83,6 +126,23 @@ export default function UserAccountsPage() {
     () => availableMembers.filter((m) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(m.email ?? '').trim())),
     [availableMembers],
   )
+  const bulkReadyIds = useMemo(() => new Set(bulkReadyMembers.map((m) => String(m.id))), [bulkReadyMembers])
+  const filteredBulkMembers = useMemo(() => {
+    const q = bulkFilter.trim().toLowerCase()
+    if (!q) return availableMembers
+    return availableMembers.filter(
+      (m) =>
+        String(m.name ?? '').toLowerCase().includes(q) ||
+        String(m.email ?? '').toLowerCase().includes(q) ||
+        String(m.role ?? '').toLowerCase().includes(q),
+    )
+  }, [availableMembers, bulkFilter])
+  const selectedReadyCount = useMemo(
+    () => [...bulkSelected].filter((id) => bulkReadyIds.has(id)).length,
+    [bulkSelected, bulkReadyIds],
+  )
+  const allReadySelected =
+    bulkReadyMembers.length > 0 && bulkReadyMembers.every((m) => bulkSelected.has(String(m.id)))
 
   const showToast = (msg) => {
     setToast(msg)
@@ -173,12 +233,13 @@ export default function UserAccountsPage() {
   const openCreate = () => {
     const first = availableMembers[0]
     setFormError('')
+    setCreateShowPassword(false)
     if (first) {
       const username = suggestUsername(first.name)
       setForm({
         memberId: first.id,
         username,
-        email: `${username}@church.internal`,
+        email: first.email || `${username}@church.internal`,
         appRole: first.role === 'Member' ? 'member' : ROLES.find((r) => r.label === first.role)?.id ?? 'member',
         password: '',
         confirmPassword: '',
@@ -304,11 +365,34 @@ export default function UserAccountsPage() {
   }
 
   const openBulk = () => {
-    setBulkPassword('Password123!')
-    setBulkConfirm('Password123!')
+    setBulkPassword('')
+    setBulkConfirm('')
+    setBulkShowPassword(false)
     setBulkResult(null)
     setFormError('')
+    setBulkFilter('')
+    // Pre-select everyone who can receive an account (has roster email).
+    setBulkSelected(new Set(bulkReadyMembers.map((m) => String(m.id))))
     setBulkOpen(true)
+  }
+
+  const toggleBulkMember = (memberId, canSelect) => {
+    if (!canSelect) return
+    const id = String(memberId)
+    setBulkSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllReady = () => {
+    if (allReadySelected) {
+      setBulkSelected(new Set())
+      return
+    }
+    setBulkSelected(new Set(bulkReadyMembers.map((m) => String(m.id))))
   }
 
   const submitBulk = async () => {
@@ -320,6 +404,11 @@ export default function UserAccountsPage() {
       setFormError('Passwords do not match')
       return
     }
+    const memberIds = [...bulkSelected].filter((id) => bulkReadyIds.has(id))
+    if (memberIds.length === 0) {
+      setFormError('Select at least one member with a roster email')
+      return
+    }
     if (!USE_API) {
       setFormError('Bulk create requires the API')
       return
@@ -328,9 +417,15 @@ export default function UserAccountsPage() {
     setFormError('')
     setBulkResult(null)
     try {
-      const result = await bulkCreateUsersFromRoster({ password: bulkPassword, onlyActive: true })
+      const result = await bulkCreateUsersFromRoster({
+        password: bulkPassword,
+        onlyActive: true,
+        memberIds,
+      })
       setBulkResult(result)
       await reloadAccounts()
+      const createdIds = new Set((result.users ?? []).map((u) => String(u.memberId)))
+      setBulkSelected((prev) => new Set([...prev].filter((id) => !createdIds.has(id))))
       const parts = []
       if (result.created) parts.push(`${result.created} created`)
       if (result.skipped) parts.push(`${result.skipped} skipped`)
@@ -498,7 +593,7 @@ export default function UserAccountsPage() {
                 type="button"
                 className="pmss-btn-secondary"
                 onClick={openBulk}
-                disabled={bulkReadyMembers.length === 0}
+                disabled={availableMembers.length === 0}
               >
                 <Users className="w-4 h-4" /> Create all accounts
               </button>
@@ -661,27 +756,24 @@ export default function UserAccountsPage() {
           <div className="space-y-4">
             {memberFields({ forInvite: false })}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Password</label>
-                <input
-                  type="password"
-                  className="pmss-input"
-                  value={form.password}
-                  onChange={(e) => setField('password', e.target.value)}
-                  autoComplete="new-password"
-                  placeholder="At least 8 characters"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1.5">Confirm password</label>
-                <input
-                  type="password"
-                  className="pmss-input"
-                  value={form.confirmPassword}
-                  onChange={(e) => setField('confirmPassword', e.target.value)}
-                  autoComplete="new-password"
-                />
-              </div>
+              <PasswordField
+                id="create-password"
+                label="Password"
+                value={form.password}
+                onChange={(e) => setField('password', e.target.value)}
+                placeholder="Type the password to use"
+                visible={createShowPassword}
+                onToggleVisible={() => setCreateShowPassword((v) => !v)}
+              />
+              <PasswordField
+                id="create-confirm-password"
+                label="Confirm password"
+                value={form.confirmPassword}
+                onChange={(e) => setField('confirmPassword', e.target.value)}
+                placeholder="Re-type the same password"
+                visible={createShowPassword}
+                onToggleVisible={() => setCreateShowPassword((v) => !v)}
+              />
             </div>
             {formError && (
               <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-input px-3 py-2" role="alert">
@@ -695,9 +787,9 @@ export default function UserAccountsPage() {
       <Modal
         open={bulkOpen}
         onClose={() => setBulkOpen(false)}
-        title="Create all member accounts"
-        description={`Creates Active logins for ${bulkReadyMembers.length} roster member${bulkReadyMembers.length === 1 ? '' : 's'} who have an email and no account yet. Usernames are generated automatically; members sign in with their email and the temporary password, then change it.`}
-        wide
+        title="Create member accounts"
+        description="Select roster members who do not have a login yet. Accounts use their roster name and email, with one shared temporary password."
+        xl
         footer={
           <>
             <button type="button" className="pmss-btn-secondary" onClick={() => setBulkOpen(false)}>
@@ -707,48 +799,139 @@ export default function UserAccountsPage() {
               type="button"
               className="pmss-btn-primary"
               onClick={submitBulk}
-              disabled={submitting || bulkReadyMembers.length === 0}
+              disabled={submitting || selectedReadyCount === 0}
             >
               {submitting
                 ? 'Creating…'
-                : `Create ${bulkReadyMembers.length} account${bulkReadyMembers.length === 1 ? '' : 's'}`}
+                : `Create ${selectedReadyCount} account${selectedReadyCount === 1 ? '' : 's'}`}
             </button>
           </>
         }
       >
         <div className="space-y-4">
           <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">Temporary password</label>
-              <input
-                type="password"
-                className="pmss-input"
-                value={bulkPassword}
-                onChange={(e) => setBulkPassword(e.target.value)}
-                autoComplete="new-password"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">Confirm password</label>
-              <input
-                type="password"
-                className="pmss-input"
-                value={bulkConfirm}
-                onChange={(e) => setBulkConfirm(e.target.value)}
-                autoComplete="new-password"
-              />
-            </div>
+            <PasswordField
+              id="bulk-password"
+              label="Temporary password"
+              value={bulkPassword}
+              onChange={(e) => setBulkPassword(e.target.value)}
+              placeholder="Type the shared password"
+              visible={bulkShowPassword}
+              onToggleVisible={() => setBulkShowPassword((v) => !v)}
+            />
+            <PasswordField
+              id="bulk-confirm-password"
+              label="Confirm password"
+              value={bulkConfirm}
+              onChange={(e) => setBulkConfirm(e.target.value)}
+              placeholder="Re-type the same password"
+              visible={bulkShowPassword}
+              onToggleVisible={() => setBulkShowPassword((v) => !v)}
+            />
           </div>
           <p className="text-xs text-neutral-500">
-            Members without an email on the roster are skipped. Add emails under Members (or import them), then run
-            this again. Sign-in uses email, not username.
+            Choose any temporary password (at least 8 characters). Use the eye icon to show or hide it. Every selected
+            member gets this same password and must change it on first login.
           </p>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <input
+              type="search"
+              placeholder="Search name, email, or role…"
+              className="pmss-input flex-1"
+              value={bulkFilter}
+              onChange={(e) => setBulkFilter(e.target.value)}
+            />
+            <label className="inline-flex items-center gap-2 text-sm font-medium text-neutral-700 shrink-0 cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-neutral-300"
+                checked={allReadySelected}
+                onChange={toggleSelectAllReady}
+                disabled={bulkReadyMembers.length === 0}
+              />
+              Select all with email ({bulkReadyMembers.length})
+            </label>
+          </div>
+
+          <p className="text-xs text-neutral-500">
+            {availableMembers.length} without an account · {selectedReadyCount} selected. Sign-in uses roster email;
+            members must change the temporary password on first login.
+          </p>
+
           {availableMembers.length > bulkReadyMembers.length && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-input px-3 py-2">
               {availableMembers.length - bulkReadyMembers.length} member
-              {availableMembers.length - bulkReadyMembers.length === 1 ? '' : 's'} missing email will be skipped.
+              {availableMembers.length - bulkReadyMembers.length === 1 ? '' : 's'} missing email cannot be selected —
+              add email on the Members roster first.
             </p>
           )}
+
+          <div className="rounded-lg border border-neutral-200 overflow-hidden max-h-[min(42vh,420px)] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-neutral-50 border-b border-neutral-200 z-[1]">
+                <tr className="text-left text-xs uppercase tracking-wide text-neutral-500">
+                  <th className="w-10 px-3 py-2 font-semibold"> </th>
+                  <th className="px-3 py-2 font-semibold">Name</th>
+                  <th className="px-3 py-2 font-semibold">Email</th>
+                  <th className="px-3 py-2 font-semibold">Role</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {filteredBulkMembers.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-6 text-center text-neutral-500">
+                      {availableMembers.length === 0
+                        ? 'Every roster member already has an account.'
+                        : 'No members match this search.'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredBulkMembers.map((m) => {
+                    const id = String(m.id)
+                    const email = String(m.email ?? '').trim()
+                    const canSelect = bulkReadyIds.has(id)
+                    const checked = bulkSelected.has(id)
+                    return (
+                      <tr
+                        key={id}
+                        role="button"
+                        tabIndex={canSelect ? 0 : -1}
+                        aria-pressed={checked}
+                        className={`hover:bg-primary-50/40 ${canSelect ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
+                        onClick={() => toggleBulkMember(id, canSelect)}
+                        onKeyDown={(e) => {
+                          if (!canSelect) return
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            toggleBulkMember(id, true)
+                          }
+                        }}
+                      >
+                        <td className="px-3 py-2.5 align-middle">
+                          <input
+                            type="checkbox"
+                            className="rounded border-neutral-300 pointer-events-none"
+                            checked={checked && canSelect}
+                            disabled={!canSelect}
+                            readOnly
+                            tabIndex={-1}
+                            aria-hidden="true"
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-neutral-900">{m.name}</td>
+                        <td className="px-3 py-2.5 text-neutral-700 font-mono text-xs">
+                          {email || <span className="text-amber-700 font-sans">No email</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-neutral-600">{m.role}</td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
           {formError && (
             <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-input px-3 py-2" role="alert">
               {formError}

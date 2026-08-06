@@ -180,7 +180,7 @@ router.post('/', authMiddleware, async (req, res) => {
   return res.status(201).json(body)
 })
 
-/** Create Active accounts for every roster member who does not already have one. */
+/** Create Active accounts for roster members who do not already have one. */
 router.post('/bulk-from-roster', authMiddleware, async (req, res) => {
   if (!MANAGE_ROLES.has(req.auth.role)) {
     return res.status(403).json({ error: 'Forbidden' })
@@ -192,6 +192,13 @@ router.post('/bulk-from-roster', authMiddleware, async (req, res) => {
   }
 
   const onlyActive = req.body?.onlyActive !== false
+  const requestedIds = Array.isArray(req.body?.memberIds)
+    ? [...new Set(req.body.memberIds.map((id) => String(id)))]
+    : null
+  if (requestedIds && requestedIds.length === 0) {
+    return res.status(400).json({ error: 'Select at least one member' })
+  }
+
   const members = await db
     .prepare(
       onlyActive
@@ -213,6 +220,7 @@ router.post('/bulk-from-roster', authMiddleware, async (req, res) => {
 
   for (const member of members) {
     const memberId = String(member.id)
+    if (requestedIds && !requestedIds.includes(memberId)) continue
     if (linked.has(memberId)) {
       skipped.push({ memberId, name: member.name, reason: 'Already has an account' })
       continue
@@ -263,6 +271,7 @@ router.post('/bulk-from-roster', authMiddleware, async (req, res) => {
     created: created.length,
     skipped: skipped.length,
     errors: errors.length,
+    requested: requestedIds?.length ?? null,
   })
 
   return res.json({
