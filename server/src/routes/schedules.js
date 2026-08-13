@@ -5,8 +5,10 @@ import { authMiddleware } from '../middleware/auth.js'
 import { loadRulesFromDb } from '../lib/settingsStore.js'
 import { validateSchedulePayload, publishBlocked } from '../lib/validation.js'
 import {
+  ensureDraftForMonth,
   getDraftRow,
   getLatestPublishedForMonth,
+  repairMismatchedDrafts,
 } from '../lib/scheduleAccess.js'
 import {
   emptyMonthPayload,
@@ -107,11 +109,8 @@ router.get('/current', authMiddleware, async (req, res) => {
   const catalog = await buildMonthsCatalog(canEdit)
 
   if (canEdit) {
-    let draft = await getDraftRow(requested)
-    if (!draft && requested === live) {
-      // Prefer any legacy draft if live month draft missing
-      draft = await db.prepare(`SELECT * FROM schedule_versions WHERE status = 'draft' LIMIT 1`).get()
-    }
+    await repairMismatchedDrafts()
+    let draft = await ensureDraftForMonth(requested)
     if (!draft) {
       const empty = emptyMonthPayload(requested)
       return res.json({
@@ -232,7 +231,7 @@ router.put('/draft', authMiddleware, async (req, res) => {
   const validated = await attachValidation({
     ...payload,
     monthKey,
-    monthLabel: payload.monthLabel || monthLabelFromKey(monthKey),
+    monthLabel: monthLabelFromKey(monthKey),
   })
 
   let draft = await getDraftRow(monthKey)

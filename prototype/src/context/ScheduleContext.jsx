@@ -47,13 +47,17 @@ export function ScheduleProvider({ children }) {
   const pendingPayload = useRef(null)
 
   const applyScheduleResponse = useCallback((data) => {
-    setPayload(data.payload)
+    const monthKey = data.monthKey ?? data.payload?.monthKey ?? null
+    const payload = data.payload
+      ? { ...data.payload, monthKey, monthLabel: data.payload.monthLabel || data.payload.monthKey }
+      : data.payload
+    setPayload(payload)
     setSource(data.source)
     setEditable(Boolean(data.editable))
     setVisibility(data.visibility ?? (data.source === 'published' ? 'public' : 'draft'))
     setIsPublic(Boolean(data.isPublic))
     setPublishedMeta(data.published ?? null)
-    activeMonthRef.current = data.monthKey ?? data.payload?.monthKey ?? null
+    activeMonthRef.current = monthKey
     if (data.months || data.liveMonthKey) {
       setMonthsMeta({
         liveMonthKey: data.liveMonthKey,
@@ -153,6 +157,16 @@ export function ScheduleProvider({ children }) {
     [editable],
   )
 
+  const persistNow = useCallback(async (nextPayload) => {
+    if (!USE_API || !nextPayload) return
+    pendingPayload.current = null
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+    await scheduleApi.saveScheduleDraft(nextPayload)
+  }, [])
+
   const updatePayload = useCallback(
     (updater) => {
       setPayload((prev) => {
@@ -190,6 +204,7 @@ export function ScheduleProvider({ children }) {
       refresh,
       switchMonth,
       flushDraft,
+      persistNow,
       updatePayload,
     }),
     [
@@ -204,6 +219,7 @@ export function ScheduleProvider({ children }) {
       refresh,
       switchMonth,
       flushDraft,
+      persistNow,
       updatePayload,
     ],
   )

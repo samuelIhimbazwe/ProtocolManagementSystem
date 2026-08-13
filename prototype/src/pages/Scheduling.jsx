@@ -53,6 +53,7 @@ export default function SchedulingPage() {
     refresh,
     switchMonth,
     flushDraft,
+    persistNow,
     loading: scheduleLoading,
     source,
     monthsMeta,
@@ -158,8 +159,9 @@ export default function SchedulingPage() {
   }
 
   useEffect(() => {
-    if (payload.monthKey) setCalendarMonth(payload.monthKey)
-  }, [payload.monthKey])
+    const key = activeMonthKey || payload.monthKey
+    if (key) setCalendarMonth(key)
+  }, [activeMonthKey, payload.monthKey])
 
   const selectMonth = async (monthKey) => {
     setCalendarMonth(monthKey)
@@ -226,23 +228,24 @@ export default function SchedulingPage() {
     showToast('Leadership randomized')
   }
 
-  const generateMonthlyCalendar = async () => {
-    if (!calendarMonth || !/^\d{4}-\d{2}$/.test(calendarMonth)) {
+  const generateMonthlyCalendar = async (monthKeyArg) => {
+    const monthKey = typeof monthKeyArg === 'string' ? monthKeyArg : calendarMonth
+    if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) {
       showToast('Select a month first')
       return
     }
-    if (USE_API && calendarMonth !== (payload.monthKey || activeMonthKey)) {
-      await switchMonth(calendarMonth)
+    setCalendarMonth(monthKey)
+    if (USE_API && monthKey !== (payload.monthKey || activeMonthKey)) {
+      await switchMonth(monthKey)
     }
-    const label = monthLabelFromKey(calendarMonth)
-    const generated = buildMonthlyServices(calendarMonth)
+    const label = monthLabelFromKey(monthKey)
+    const generated = buildMonthlyServices(monthKey)
     if (!generated.length) {
       showToast('Could not build services for that month')
       return
     }
-    updatePayload((p) => ({
-      ...p,
-      monthKey: calendarMonth,
+    const next = {
+      monthKey,
       monthLabel: label,
       services: generated,
       choirAssignments: [],
@@ -250,12 +253,26 @@ export default function SchedulingPage() {
       leadershipReview: [],
       validationRows: [],
       validationSummary: { passed: 0, warnings: 0, errors: 0, status: 'PENDING' },
-    }))
+    }
+    updatePayload(() => next)
+    if (USE_API) {
+      try {
+        await persistNow(next)
+      } catch (err) {
+        showToast(err.message ?? 'Could not save generated calendar')
+        return
+      }
+    }
     const note =
-      calendarMonth === nextMonthKeyVal
+      monthKey === nextMonthKeyVal
         ? ` — stays private for others until you make ${label} public`
         : ''
     showToast(`Monthly calendar generated for ${label} (${generated.length} services)${note}`)
+  }
+
+  const prepNextMonth = async () => {
+    if (!nextMonthKeyVal) return
+    await generateMonthlyCalendar(nextMonthKeyVal)
   }
 
   const selectTab = (id) => {
@@ -420,52 +437,56 @@ export default function SchedulingPage() {
       {tab === 'calendar' && (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-3 items-center">
-            {canEdit ? (
-              <input
-                type="month"
-                value={calendarMonth}
-                onChange={(e) => selectMonth(e.target.value)}
-                className="pmss-input w-auto"
-                aria-label="Schedule month"
-              />
-            ) : (
-              <select
-                className="pmss-input w-auto"
-                value={calendarMonth}
-                onChange={(e) => selectMonth(e.target.value)}
-                aria-label="Schedule month"
-              >
-                {visibleMonthOptions.map((m) => (
-                  <option key={m.monthKey} value={m.monthKey}>
-                    {m.monthLabel}
-                    {m.isLive ? ' (live)' : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-            {canEdit && nextMonthKeyVal && (
+            <div className="inline-flex p-1 rounded-xl bg-neutral-100/80 border border-neutral-200/80">
               <button
                 type="button"
-                className="pmss-btn-chip pmss-btn-chip-secondary"
-                onClick={() => selectMonth(nextMonthKeyVal)}
-              >
-                Prep {monthLabelFromKey(nextMonthKeyVal)}
-              </button>
-            )}
-            {canEdit && calendarMonth !== liveMonthKey && (
-              <button
-                type="button"
-                className="pmss-btn-chip pmss-btn-chip-secondary"
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                  calendarMonth === liveMonthKey
+                    ? 'bg-white text-primary-800 shadow-sm ring-1 ring-neutral-200/80'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
                 onClick={() => selectMonth(liveMonthKey)}
               >
-                Back to live month
+                {monthLabelFromKey(liveMonthKey)}
+                <span className="ml-1 text-[10px] uppercase tracking-wide text-neutral-400">Live</span>
               </button>
-            )}
+              {(canEdit ? nextMonthKeyVal : null) && (
+                <button
+                  type="button"
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                    calendarMonth === nextMonthKeyVal
+                      ? 'bg-white text-primary-800 shadow-sm ring-1 ring-neutral-200/80'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                  onClick={() => selectMonth(nextMonthKeyVal)}
+                >
+                  {monthLabelFromKey(nextMonthKeyVal)}
+                  <span className="ml-1 text-[10px] uppercase tracking-wide text-neutral-400">Next</span>
+                </button>
+              )}
+              {!canEdit &&
+                visibleMonthOptions
+                  .filter((m) => m.monthKey !== liveMonthKey)
+                  .map((m) => (
+                    <button
+                      key={m.monthKey}
+                      type="button"
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                        calendarMonth === m.monthKey
+                          ? 'bg-white text-primary-800 shadow-sm ring-1 ring-neutral-200/80'
+                          : 'text-neutral-600 hover:text-neutral-900'
+                      }`}
+                      onClick={() => selectMonth(m.monthKey)}
+                    >
+                      {m.monthLabel}
+                    </button>
+                  ))}
+            </div>
             {canEdit && (
               <button
                 type="button"
                 className="pmss-btn-primary"
-                onClick={generateMonthlyCalendar}
+                onClick={() => generateMonthlyCalendar()}
                 disabled={!calendarMonth}
               >
                 <Sparkles className="w-4 h-4" /> Generate monthly calendar
@@ -490,7 +511,9 @@ export default function SchedulingPage() {
             emptyTitle="No services for this month"
             emptyDescription={
               canEdit
-                ? 'Pick a month, then click Generate monthly calendar to create Sunday, Tuesday, Friday, and Igaburo services.'
+                ? calendarMonth === nextMonthKeyVal
+                  ? `Click Generate monthly calendar to create ${monthLabelFromKey(calendarMonth)} services. Other users will not see this month until you make it public.`
+                  : 'Pick a month, then click Generate monthly calendar to create Sunday, Tuesday, Friday, and Igaburo services.'
                 : 'Ask a coordinator to generate and publish this month.'
             }
           />

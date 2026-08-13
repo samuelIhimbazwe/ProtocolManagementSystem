@@ -27,6 +27,8 @@ if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
 
 await initSchema()
 await seedDatabase()
+const { repairMismatchedDrafts } = await import('./lib/scheduleAccess.js')
+await repairMismatchedDrafts()
 
 const app = express()
 const port = Number(process.env.PORT ?? 3001)
