@@ -1,4 +1,4 @@
-# PMSS deployment
+# TMS deployment
 
 Split hosting for production:
 
@@ -45,10 +45,10 @@ npm run seed -- --force
 | `DATABASE_URL` | Neon connection string |
 | `JWT_SECRET` | Strong secret (`openssl rand -hex 32`) |
 | `JWT_EXPIRES` | `12h` (optional) |
-| `CORS_ORIGIN` | Your Vercel URL, e.g. `https://pmss.vercel.app` (comma-separate for multiple) |
+| `CORS_ORIGIN` | Your Vercel URL, e.g. `https://tms.vercel.app` (comma-separate for multiple) |
 | `SERVE_WEB` | `0` (API only; UI is on Vercel) |
 | `NODE_ENV` | `production` |
-| `PMSS_TODAY` | Pilot date, e.g. `2026-08-02` (optional) |
+| `TMS_TODAY` | Pilot date, e.g. `2026-08-02` (optional) |
 
 After deploy, open `https://<your-service>.onrender.com/health` — expect `{ "ok": true, "db": "postgres" }`.
 
@@ -125,11 +125,11 @@ Uses SQLite unless `DATABASE_URL` is set. Prototype `.env.production` uses `VITE
 |----------|---------|
 | `PORT` | HTTP port (Render sets this) |
 | `DATABASE_URL` | Neon Postgres — if unset, uses SQLite |
-| `PMSS_DB_PATH` | SQLite file path (local only) |
+| `TMS_DB_PATH` | SQLite file path (local only) |
 | `JWT_SECRET` | **Required in production** |
 | `CORS_ORIGIN` | Vercel origin(s) |
 | `SERVE_WEB` | `0` on Render; `1` for unified host |
-| `PMSS_TODAY` | Pilot “today” for duty windows |
+| `TMS_TODAY` | Pilot “today” for duty windows |
 | `NODE_ENV` | `production` / `development` |
 
 ### Web (Vite)

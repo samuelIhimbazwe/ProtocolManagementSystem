@@ -91,12 +91,24 @@ export async function changePassword(currentPassword, newPassword) {
   })
 }
 
-export async function publishSchedule() {
-  return apiFetch('/schedules/publish', { method: 'POST' })
+export async function publishSchedule(monthKey) {
+  return apiFetch('/schedules/publish', {
+    method: 'POST',
+    body: monthKey ? { monthKey } : {},
+  })
 }
 
-export async function archiveSchedule() {
-  return apiFetch('/schedules/archive', { method: 'POST' })
+export async function archiveSchedule(monthKey) {
+  return apiFetch('/schedules/archive', {
+    method: 'POST',
+    body: monthKey ? { monthKey } : {},
+  })
+}
+
+export async function makeScheduleMonthPublic(monthKey) {
+  return apiFetch(`/schedules/months/${encodeURIComponent(monthKey)}/make-public`, {
+    method: 'POST',
+  })
 }
 
 export async function fetchUserAccounts() {

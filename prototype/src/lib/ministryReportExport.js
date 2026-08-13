@@ -1,20 +1,18 @@
 import { downloadBlob } from './choirScheduleExport'
 import { downloadDocumentHtmlAsPdf } from './bulletinPdf.js'
+import {
+  buildFormalReportHtml,
+  escapeHtml,
+  formalTableSection,
+  normalizeSignatories,
+} from './reportDocument.js'
 
-const DEFAULT_TITLE = 'PMSS Ministry Report'
+const DEFAULT_TITLE = 'TMS Ministry Report'
 
 function escapeCsvCell(value) {
   const s = String(value ?? '')
   if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
   return s
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
 }
 
 function includeHasKeys(include) {
@@ -40,6 +38,7 @@ function normalizeOptions(options) {
     title: opts.title ?? DEFAULT_TITLE,
     subtitle: opts.subtitle ?? '',
     include: opts.include,
+    signatories: normalizeSignatories(opts),
   }
 }
 
@@ -293,49 +292,37 @@ function excelFromSections(sections, title, subtitle, report) {
 </body></html>`
 }
 
-function pdfSectionHtml({ title, headers, rows }) {
-  const head = headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')
-  const body = rows
-    .map((r) => `<tr>${headers.map((h) => `<td>${escapeHtml(r[h])}</td>`).join('')}</tr>`)
-    .join('')
-  return `
-  <h2>${escapeHtml(title)}</h2>
-  <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
-}
-
-const PDF_PRINT_CSS = `
-  body { font-family: system-ui, sans-serif; padding: 24px; color: #111; font-size: 12px; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  h2 { font-size: 14px; margin: 20px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
-  .meta { color: #555; margin-bottom: 16px; }
-  .subtitle { color: #333; margin: 0 0 8px; font-size: 13px; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-  th, td { border: 1px solid #333; padding: 4px 6px; text-align: left; vertical-align: top; }
-  th { background: #eef2f6; }
-  @media print { body { padding: 8px; } }
-`
-
-function pdfFromSections(sections, title, subtitle, report) {
+function pdfFromSections(sections, title, subtitle, report, signatories) {
   const o = report.overview ?? {}
-  const pub = report.schedule?.published ?? {}
-  const metaParts = [
-    o.monthLabel,
-    pub.version ?? o.publishedVersion,
-    formatTimestamp(report.generatedAt),
-  ].filter((x) => x != null && x !== '')
+  const monthLabel = o.monthLabel ?? report.schedule?.monthLabel ?? ''
+  const body = sections
+    .map((s, i) =>
+      formalTableSection(s.title, s.headers, s.rows, {
+        index: i + 1,
+        totalLabel: s.totalLabel,
+        totalValue: s.totalValue,
+      }),
+    )
+    .join('\n')
 
-  const subtitleBlock = subtitle ? `<p class="subtitle">${escapeHtml(subtitle)}</p>` : ''
-  const body = sections.map(pdfSectionHtml).join('')
-
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-<style>${PDF_PRINT_CSS}</style></head>
-<body>
-  <h1>${escapeHtml(title)}</h1>
-  ${subtitleBlock}
-  <p class="meta">${escapeHtml(metaParts.join(' · '))}</p>
-  ${body}
-</body></html>`
+  return buildFormalReportHtml({
+    title,
+    productName: 'Time table Management System',
+    place: 'ADEPR Kacyiru',
+    reportType: title,
+    period: monthLabel || formatTimestamp(report.generatedAt) || '—',
+    generatedAt: report.generatedAt,
+    summary: [
+      { label: 'Report type', value: title },
+      { label: 'Period', value: monthLabel || '—' },
+      { label: 'Sections', value: String(sections.length) },
+    ],
+    bodyHtml: [
+      subtitle ? `<p style="margin:-8px 0 18px;color:var(--muted)">${escapeHtml(subtitle)}</p>` : '',
+      body,
+    ].join('\n'),
+    signatories,
+  })
 }
 
 export function downloadReportsCsv(report, filename = 'pmss-ministry-report.csv', options) {
@@ -353,9 +340,9 @@ export function downloadReportsExcel(report, filename = 'pmss-ministry-report.xl
 }
 
 export async function downloadReportsPdf(report, options) {
-  const { title, subtitle, include } = normalizeOptions(options)
+  const { title, subtitle, include, signatories } = normalizeOptions(options)
   const sections = buildSections(report, include, title, subtitle)
-  const html = pdfFromSections(sections, title, subtitle, report)
+  const html = pdfFromSections(sections, title, subtitle, report, signatories)
   const safe = String(title || 'ministry-report')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

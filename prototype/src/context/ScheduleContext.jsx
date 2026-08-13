@@ -38,29 +38,78 @@ export function ScheduleProvider({ children }) {
   const [source, setSource] = useState('demo')
   const [editable, setEditable] = useState(false)
   const [payload, setPayload] = useState(() => (useApi ? null : demoPayload()))
+  const [monthsMeta, setMonthsMeta] = useState(null)
+  const [visibility, setVisibility] = useState('public')
+  const [isPublic, setIsPublic] = useState(true)
+  const [publishedMeta, setPublishedMeta] = useState(null)
+  const activeMonthRef = useRef(null)
   const saveTimer = useRef(null)
+  const pendingPayload = useRef(null)
 
-  const refresh = useCallback(async () => {
-    if (!USE_API || !isAuthenticated) {
-      setPayload(demoPayload())
-      setLoading(false)
-      return
+  const applyScheduleResponse = useCallback((data) => {
+    setPayload(data.payload)
+    setSource(data.source)
+    setEditable(Boolean(data.editable))
+    setVisibility(data.visibility ?? (data.source === 'published' ? 'public' : 'draft'))
+    setIsPublic(Boolean(data.isPublic))
+    setPublishedMeta(data.published ?? null)
+    activeMonthRef.current = data.monthKey ?? data.payload?.monthKey ?? null
+    if (data.months || data.liveMonthKey) {
+      setMonthsMeta({
+        liveMonthKey: data.liveMonthKey,
+        nextMonthKey: data.nextMonthKey,
+        months: data.months ?? [],
+      })
     }
-    setLoading(true)
-    try {
-      const data = await scheduleApi.fetchCurrentSchedule()
-      setPayload(data.payload)
-      setSource(data.source)
-      setEditable(Boolean(data.editable))
-      await refreshAuth()
-    } catch {
-      setPayload(demoPayload())
-      setSource('demo-fallback')
-      setEditable(false)
-    } finally {
-      setLoading(false)
-    }
-  }, [isAuthenticated, refreshAuth])
+  }, [])
+
+  const refresh = useCallback(
+    async (monthKey) => {
+      if (!USE_API || !isAuthenticated) {
+        setPayload(demoPayload())
+        setMonthsMeta({
+          liveMonthKey: '2026-08',
+          nextMonthKey: '2026-09',
+          months: [
+            {
+              monthKey: '2026-08',
+              monthLabel: 'August 2026',
+              isLive: true,
+              visible: true,
+              visibility: 'public',
+              hasDraft: true,
+            },
+          ],
+        })
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      try {
+        const target = monthKey || activeMonthRef.current || undefined
+        const [data, catalog] = await Promise.all([
+          scheduleApi.fetchCurrentSchedule(target),
+          scheduleApi.fetchScheduleMonths().catch(() => null),
+        ])
+        if (catalog) {
+          setMonthsMeta({
+            liveMonthKey: catalog.liveMonthKey,
+            nextMonthKey: catalog.nextMonthKey,
+            months: catalog.months ?? [],
+          })
+        }
+        applyScheduleResponse(data)
+        await refreshAuth()
+      } catch {
+        setPayload(demoPayload())
+        setSource('demo-fallback')
+        setEditable(false)
+      } finally {
+        setLoading(false)
+      }
+    },
+    [isAuthenticated, refreshAuth, applyScheduleResponse],
+  )
 
   useEffect(() => {
     refresh()
@@ -69,19 +118,40 @@ export function ScheduleProvider({ children }) {
   useEffect(() => {
     if (!USE_API || !isAuthenticated) return
     const onVisible = () => {
-      if (document.visibilityState === 'visible') refresh()
+      if (document.visibilityState === 'visible') refresh(activeMonthRef.current)
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [isAuthenticated, refresh])
 
-  const persistDraft = useCallback((nextPayload) => {
-    if (!USE_API || !editable) return
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      scheduleApi.saveScheduleDraft(nextPayload).catch(() => {})
-    }, 700)
+  const flushDraft = useCallback(async () => {
+    if (!USE_API || !editable || !pendingPayload.current) return
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+    const toSave = pendingPayload.current
+    pendingPayload.current = null
+    try {
+      await scheduleApi.saveScheduleDraft(toSave)
+    } catch {
+      /* ignore */
+    }
   }, [editable])
+
+  const persistDraft = useCallback(
+    (nextPayload) => {
+      if (!USE_API || !editable) return
+      pendingPayload.current = nextPayload
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(() => {
+        const toSave = pendingPayload.current
+        pendingPayload.current = null
+        if (toSave) scheduleApi.saveScheduleDraft(toSave).catch(() => {})
+      }, 700)
+    },
+    [editable],
+  )
 
   const updatePayload = useCallback(
     (updater) => {
@@ -95,6 +165,15 @@ export function ScheduleProvider({ children }) {
     [persistDraft],
   )
 
+  const switchMonth = useCallback(
+    async (monthKey) => {
+      if (!monthKey || monthKey === activeMonthRef.current) return
+      await flushDraft()
+      await refresh(monthKey)
+    },
+    [flushDraft, refresh],
+  )
+
   const value = useMemo(
     () => ({
       loading,
@@ -103,10 +182,30 @@ export function ScheduleProvider({ children }) {
       payload: payload ?? demoPayload(),
       teamAssignments: (payload ?? demoPayload()).teamAssignments ?? TEAM_ASSIGNMENTS,
       services: (payload ?? demoPayload()).services ?? SERVICES,
+      monthsMeta,
+      visibility,
+      isPublic,
+      publishedMeta,
+      activeMonthKey: activeMonthRef.current ?? payload?.monthKey ?? null,
       refresh,
+      switchMonth,
+      flushDraft,
       updatePayload,
     }),
-    [loading, source, editable, payload, refresh, updatePayload],
+    [
+      loading,
+      source,
+      editable,
+      payload,
+      monthsMeta,
+      visibility,
+      isPublic,
+      publishedMeta,
+      refresh,
+      switchMonth,
+      flushDraft,
+      updatePayload,
+    ],
   )
 
   return <ScheduleContext.Provider value={value}>{children}</ScheduleContext.Provider>

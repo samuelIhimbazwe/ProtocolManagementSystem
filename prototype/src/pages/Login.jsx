@@ -48,7 +48,7 @@ export default function LoginPage() {
         <ColorModeToggle className="pmss-login-theme-toggle" />
       </div>
 
-      <aside className="pmss-login-brand" aria-label="PMSS">
+      <aside className="pmss-login-brand" aria-label="TMS">
         <div className="pmss-login-brand-glow" aria-hidden />
         <div className="pmss-login-brand-veil" aria-hidden />
         <div className="pmss-login-brand-inner">
@@ -70,7 +70,7 @@ export default function LoginPage() {
             >
               <Church className="w-5 h-5" strokeWidth={1.6} />
             </div>
-            <p className="pmss-login-brand-wordmark">PMSS</p>
+            <p className="pmss-login-brand-wordmark">TMS</p>
           </div>
         </div>
       </aside>
@@ -80,7 +80,7 @@ export default function LoginPage() {
           <header className="pmss-login-header">
             <p className="pmss-auth-eyebrow pmss-auth-eyebrow--lead">Welcome</p>
             <h1 className="pmss-login-heading">Sign in</h1>
-            <p className="pmss-login-lead">Continue to your protocol ministry workspace.</p>
+            <p className="pmss-login-lead">Continue to your time table management workspace.</p>
           </header>
 
           <form onSubmit={handleLogin} className="pmss-login-form">

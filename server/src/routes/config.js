@@ -5,7 +5,7 @@ const router = Router()
 
 router.get('/pilot', (_req, res) => {
   res.json({
-    today: process.env.PMSS_TODAY ?? '2026-08-02',
+    today: (process.env.TMS_TODAY ?? process.env.PMSS_TODAY) ?? '2026-08-02',
   })
 })
 

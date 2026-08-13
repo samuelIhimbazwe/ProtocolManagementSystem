@@ -1,4 +1,4 @@
-# PMSS product roadmap & backlog
+# TMS product roadmap & backlog
 
 Ordered work for moving from **prototype + design handoff** to **pilot with real data**, with a parallel **UI/Figma parity** track.
 
@@ -104,6 +104,6 @@ Goal: Every role and state in **Figma** matches prototype; empty/loading/error s
 
 ## How to use this doc
 
-- Pull items into GitHub Issues / Azure DevOps with IDs `PMSS-1`, …  
+- Pull items into GitHub Issues / Azure DevOps with IDs `TMS-1`, …  
 - Mark prototype tasks **UI** when no API is required.  
 - Do not ship pilot until **P0** rows in M1 are acceptance-tested with real users (Coordinator + Secretary minimum).

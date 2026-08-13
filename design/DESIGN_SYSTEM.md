@@ -1,4 +1,4 @@
-# PMSS Design System
+# TMS Design System
 
 Aligned with interactive prototype (`prototype/src`) and Figma component library.
 

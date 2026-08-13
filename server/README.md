@@ -1,4 +1,4 @@
-# PMSS API (M1 pilot foundation)
+# TMS API (M1 pilot foundation)
 
 Express API for auth, scheduling, attendance, finance, and reports.
 
@@ -33,6 +33,7 @@ Password for all: **`Password123!`**
 | `j.uwimana` | Treasurer |
 | `d.mugisha` | Coordinator |
 | `j.ndayisaba` | Member |
+| `t.hakizimana` | Member (regular — never TL/VTL) |
 
 ## Endpoints
 
@@ -54,7 +55,7 @@ Password for all: **`Password123!`**
 | POST | `/attendance/sessions/:id/submit` | Submit session |
 | GET | `/attendance/me/history` | Member submitted history |
 | POST | `/users` | Invite account · `PATCH /users/:id` status/role |
-| GET | `/config/pilot` | Pilot `today` date (`PMSS_TODAY`) |
+| GET | `/config/pilot` | Pilot `today` date (`TMS_TODAY`) |
 
 Database: SQLite at `server/data/pmss.sqlite` when `DATABASE_URL` is unset; otherwise Neon/Postgres.
 

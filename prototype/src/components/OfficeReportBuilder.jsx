@@ -8,6 +8,7 @@ import {
   ROLE_LABELS,
   resolveJurisdiction,
   slugifyTitle,
+  SUBMIT_RECIPIENT_ROLE_OPTIONS,
 } from '../lib/officeReportBuilder'
 import {
   buildOfficeReportPreviewHtml,
@@ -24,12 +25,14 @@ import {
   updateOfficeReport,
 } from '../api/officeReports'
 import { USE_API } from '../api/config'
+import { emptySignatories } from '../lib/reportDocument'
 
 const EMPTY_NARRATIVE = {
   howItWent: '',
   issuesChallenges: '',
   solutions: '',
   recommendations: '',
+  notes: '',
 }
 
 /**
@@ -39,7 +42,6 @@ export default function OfficeReportBuilder({
   roleId,
   officeKind,
   onToast,
-  fullPage = false,
 }) {
   const jurisdiction = resolveJurisdiction(roleId, officeKind)
   const fallbackBlocks = useMemo(
@@ -50,6 +52,7 @@ export default function OfficeReportBuilder({
   const [catalog, setCatalog] = useState(null)
   const [title, setTitle] = useState('Office Report')
   const [subtitle, setSubtitle] = useState('')
+  const [signatories, setSignatories] = useState(emptySignatories)
   const [include, setInclude] = useState(() => defaultIncludeMap(fallbackBlocks))
   const [narrative, setNarrative] = useState(EMPTY_NARRATIVE)
   const [snapshot, setSnapshot] = useState(null)
@@ -59,23 +62,41 @@ export default function OfficeReportBuilder({
   const [previewOpen, setPreviewOpen] = useState(false)
   const [submitOpen, setSubmitOpen] = useState(false)
   const [downloadOpen, setDownloadOpen] = useState(false)
+  const [selectedRole, setSelectedRole] = useState('')
   const [selectedRecipientIds, setSelectedRecipientIds] = useState([])
   const [inbox, setInbox] = useState([])
   const [mine, setMine] = useState([])
   const [viewInbox, setViewInbox] = useState(null)
+  const [step, setStep] = useState(0)
+  const [openGroup, setOpenGroup] = useState(null)
 
   const blocks = catalog?.blocks?.length ? catalog.blocks : fallbackBlocks
   const recipients = catalog?.recipients ?? []
-  const canSubmitToLeader = recipients.length > 0
+  const roleOptions =
+    catalog?.recipientRoleOptions?.length > 0
+      ? catalog.recipientRoleOptions
+      : SUBMIT_RECIPIENT_ROLE_OPTIONS.map((o) => ({
+          ...o,
+          count: recipients.filter((r) => r.roleKey === o.id || r.appRole === o.id).length,
+        }))
+  const canSubmitToLeader = roleOptions.length > 0
   const groups = useMemo(() => groupBlocks(blocks), [blocks])
   const selectedCount = useMemo(
     () => Object.values(include).filter(Boolean).length,
     [include],
   )
 
+  const recipientsForRole = useMemo(
+    () =>
+      selectedRole
+        ? recipients.filter((r) => r.roleKey === selectedRole || (!r.roleKey && r.appRole === selectedRole))
+        : [],
+    [recipients, selectedRole],
+  )
+
   const selectedRecipients = useMemo(
-    () => recipients.filter((r) => selectedRecipientIds.includes(r.id)),
-    [recipients, selectedRecipientIds],
+    () => recipientsForRole.filter((r) => selectedRecipientIds.includes(r.id)),
+    [recipientsForRole, selectedRecipientIds],
   )
 
   const payload = useMemo(
@@ -93,7 +114,11 @@ export default function OfficeReportBuilder({
         generatedAt: snapshot?.generatedAt ?? new Date().toISOString(),
         reportId: reportId ? `RPT-${String(reportId).slice(0, 8).toUpperCase()}` : undefined,
         recipientName: selectedRecipients.map((r) => r.displayName).join(', ') || undefined,
-        recipientRole: selectedRecipients[0]?.appRole,
+        recipientRole: selectedRole || selectedRecipients[0]?.roleKey || selectedRecipients[0]?.appRole,
+        preparedByName: signatories.preparedByName,
+        preparedByRole: signatories.preparedByRole,
+        approvedByName: signatories.approvedByName,
+        approvedByRole: signatories.approvedByRole,
       },
     }),
     [
@@ -107,6 +132,8 @@ export default function OfficeReportBuilder({
       jurisdiction,
       reportId,
       selectedRecipients,
+      selectedRole,
+      signatories,
     ],
   )
 
@@ -134,7 +161,8 @@ export default function OfficeReportBuilder({
         setCatalog(cat)
         setInclude(defaultIncludeMap(cat.blocks?.length ? cat.blocks : fallbackBlocks))
         setTitle(`${ROLE_LABELS[cat.jurisdiction] ?? 'Office'} Report`)
-        if (cat.authorName) setSubtitle(`Prepared by ${cat.authorName}`)
+        if (cat.authorName) setSubtitle('')
+        setSelectedRole('')
         setSelectedRecipientIds([])
         await refreshLists()
       } catch (err) {
@@ -245,7 +273,17 @@ export default function OfficeReportBuilder({
       void confirmSubmit([])
       return
     }
+    setSelectedRole('')
+    setSelectedRecipientIds([])
     setSubmitOpen(true)
+  }
+
+  const pickRole = (roleId) => {
+    setSelectedRole(roleId)
+    const people = recipients.filter(
+      (r) => r.roleKey === roleId || (!r.roleKey && r.appRole === roleId),
+    )
+    setSelectedRecipientIds(people.map((p) => p.id))
   }
 
   const toggleRecipient = (id) => {
@@ -255,8 +293,8 @@ export default function OfficeReportBuilder({
   }
 
   const confirmSubmit = async (recipientIds) => {
-    if (canSubmitToLeader && (!recipientIds || recipientIds.length === 0)) {
-      onToast?.('Select at least one leader')
+    if (canSubmitToLeader && (!selectedRole || !recipientIds || recipientIds.length === 0)) {
+      onToast?.('Select a role and at least one recipient')
       return
     }
     setBusy(true)
@@ -296,18 +334,23 @@ export default function OfficeReportBuilder({
             const created = await createOfficeReport(body)
             id = created.report.id
           }
-          const submitted = await submitOfficeReport(id, { recipientUserId: rid })
+          const submitted = await submitOfficeReport(id, {
+            recipientUserId: rid,
+            recipientRole: selectedRole,
+          })
           lastId = submitted.report.id
           if (submitted.report.recipientName) names.push(submitted.report.recipientName)
         }
         setStatus('submitted')
         setReportId(lastId)
+        const roleLabel = ROLE_LABELS[selectedRole] ?? selectedRole
         onToast?.(
           names.length === 1
-            ? `Report submitted to ${names[0]}`
-            : `Report submitted to ${names.length} leaders`,
+            ? `Report submitted to ${names[0]} (${roleLabel})`
+            : `Report submitted to ${names.length} ${roleLabel} recipients`,
         )
       }
+      setSelectedRole('')
       setSelectedRecipientIds([])
       await refreshLists()
     } catch (err) {
@@ -317,203 +360,322 @@ export default function OfficeReportBuilder({
     }
   }
 
-  const narrativeFields = [
-    ['howItWent', 'narrativeHow', 'How it went'],
-    ['issuesChallenges', 'narrativeIssues', 'Issues & challenges'],
-    ['solutions', 'narrativeSolutions', 'Solutions used'],
-    ['recommendations', 'narrativeRecs', 'Recommendations'],
+  const isTeamDuty = jurisdiction === 'team_duty'
+  const narrativeFields = isTeamDuty
+    ? [
+        ['howItWent', 'narrativeHow', 'How it went'],
+        ['issuesChallenges', 'narrativeIssues', 'Issues & challenges'],
+        ['solutions', 'narrativeSolutions', 'Solutions used'],
+        ['recommendations', 'narrativeRecs', 'Recommendations'],
+      ]
+    : [['notes', 'narrativeNotes', 'Notes']]
+
+  const steps = [
+    { id: 'details', label: 'Details' },
+    { id: 'sections', label: 'Sections' },
+    { id: 'notes', label: 'Notes' },
+    { id: 'finish', label: 'Finish' },
   ]
 
+  const goNext = () => setStep((s) => Math.min(s + 1, steps.length - 1))
+  const goBack = () => setStep((s) => Math.max(s - 1, 0))
+
   return (
-    <section className={fullPage ? 'pmss-card p-5 md:p-6' : 'pmss-card p-5 mb-8'}>
-      {!fullPage && (
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
-          <div>
-            <h2 className="font-semibold text-neutral-900">Office report builder</h2>
-            <p className="text-sm text-neutral-500 mt-1">
-              Include any section you can access in your jurisdiction (
-              {ROLE_LABELS[jurisdiction] ?? jurisdiction}), then preview, download, or submit to a leader.
-            </p>
-          </div>
-          <Badge variant={status === 'submitted' ? 'success' : 'warning'}>
-            {status === 'submitted' ? 'Last action: submitted' : 'Draft workspace'}
-          </Badge>
-        </div>
-      )}
-      {fullPage && (
-        <div className="flex justify-end mb-4">
-          <Badge variant={status === 'submitted' ? 'success' : 'warning'}>
-            {status === 'submitted' ? 'Last action: submitted' : 'Draft workspace'}
-          </Badge>
-        </div>
-      )}
-
-      <div className="grid lg:grid-cols-2 gap-4 mb-4">
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Report title</label>
-          <input className="pmss-input" value={title} onChange={(e) => setTitle(e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Subtitle / notes</label>
-          <input
-            className="pmss-input"
-            value={subtitle}
-            onChange={(e) => setSubtitle(e.target.value)}
-            placeholder="Optional context"
-          />
-        </div>
+    <section className="pmss-card p-5 md:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+        <nav className="flex flex-wrap gap-1.5" aria-label="Report builder steps">
+          {steps.map((s, i) => {
+            const active = i === step
+            const done = i < step
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setStep(i)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  active
+                    ? 'bg-primary-700 text-white'
+                    : done
+                      ? 'bg-primary-50 text-primary-800'
+                      : 'bg-neutral-100 text-neutral-500'
+                }`}
+              >
+                {i + 1}. {s.label}
+              </button>
+            )
+          })}
+        </nav>
+        <Badge variant={status === 'submitted' ? 'success' : 'warning'}>
+          {status === 'submitted' ? 'Last action: submitted' : 'Draft workspace'}
+        </Badge>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button type="button" className="pmss-btn-chip pmss-btn-chip-secondary" onClick={() => setAll(true)}>
-          Select all
-        </button>
-        <button type="button" className="pmss-btn-chip pmss-btn-chip-secondary" onClick={() => setAll(false)}>
-          Clear all
-        </button>
-        <span className="text-xs text-neutral-500 self-center tabular-nums">
-          {selectedCount}/{blocks.length} sections
-        </span>
-      </div>
-
-      <div className="space-y-4 mb-5">
-        {groups.map((g) => {
-          const selectedInGroup = g.blocks.filter((b) => include[b.id]).length
-          const allOn = selectedInGroup === g.blocks.length && g.blocks.length > 0
-          return (
-            <div key={g.name}>
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <h3 className="text-sm font-semibold text-neutral-800">
-                  {g.name}
-                  <span className="ml-2 text-xs font-medium text-neutral-400">
-                    {selectedInGroup}/{g.blocks.length}
-                  </span>
-                </h3>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-primary-700"
-                  onClick={() => setGroup(g.name, !allOn)}
-                >
-                  {allOn ? 'Clear group' : 'Select group'}
-                </button>
-              </div>
-              <div className="grid sm:grid-cols-2 gap-2">
-                {g.blocks.map((b) => (
-                  <label
-                    key={b.id}
-                    className={`flex items-start gap-2.5 px-3 py-2.5 rounded-lg border text-sm cursor-pointer ${
-                      include[b.id]
-                        ? 'border-primary-200 bg-primary-50/60'
-                        : 'border-neutral-200 bg-white'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
-                      checked={Boolean(include[b.id])}
-                      onChange={() => setInclude((prev) => ({ ...prev, [b.id]: !prev[b.id] }))}
-                    />
-                    <span>
-                      <span className="font-medium block">{b.label}</span>
-                      {b.description && (
-                        <span className="block text-xs text-neutral-500 mt-0.5">{b.description}</span>
-                      )}
-                    </span>
-                  </label>
-                ))}
-              </div>
+      {step === 0 && (
+        <div className="space-y-4">
+          <div className="grid lg:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Report title</label>
+              <input className="pmss-input" value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
-          )
-        })}
-      </div>
-
-      <div className="space-y-3 mb-5">
-        {narrativeFields.map(([key, blockId, label]) =>
-          include[blockId] ? (
-            <div key={key}>
-              <label className="block text-sm font-medium mb-1">{label}</label>
-              <textarea
-                className="pmss-input min-h-[5rem] py-2"
-                value={narrative[key]}
-                onChange={(e) => setNarrative((n) => ({ ...n, [key]: e.target.value }))}
-                placeholder={`Write ${label.toLowerCase()}…`}
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Subtitle / notes</label>
+              <input
+                className="pmss-input"
+                value={subtitle}
+                onChange={(e) => setSubtitle(e.target.value)}
+                placeholder="Optional context"
               />
             </div>
-          ) : null,
-        )}
-      </div>
+          </div>
 
-      <div className="flex flex-wrap gap-2 items-center border-t border-neutral-100 pt-4">
-        <button type="button" className="pmss-btn-secondary text-sm h-9" disabled={busy} onClick={preview}>
-          Preview
-        </button>
-        <button type="button" className="pmss-btn-secondary text-sm h-9" disabled={busy} onClick={saveDraft}>
-          Save draft
-        </button>
-        <button type="button" className="pmss-btn-primary text-sm h-9" disabled={busy} onClick={openSubmit}>
-          {canSubmitToLeader ? 'Submit' : 'File report'}
-        </button>
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50/60 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-3">
+              Sign-off (printed on PDF)
+            </p>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-emerald-800">Prepared by</p>
+                <input
+                  className="pmss-input"
+                  value={signatories.preparedByName}
+                  onChange={(e) => setSignatories((s) => ({ ...s, preparedByName: e.target.value }))}
+                  placeholder="Name"
+                />
+                <input
+                  className="pmss-input"
+                  value={signatories.preparedByRole}
+                  onChange={(e) => setSignatories((s) => ({ ...s, preparedByRole: e.target.value }))}
+                  placeholder="Role"
+                />
+              </div>
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-emerald-800">Approved by</p>
+                <input
+                  className="pmss-input"
+                  value={signatories.approvedByName}
+                  onChange={(e) => setSignatories((s) => ({ ...s, approvedByName: e.target.value }))}
+                  placeholder="Name"
+                />
+                <input
+                  className="pmss-input"
+                  value={signatories.approvedByRole}
+                  onChange={(e) => setSignatories((s) => ({ ...s, approvedByRole: e.target.value }))}
+                  placeholder="Role"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 1 && (
+        <div>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button type="button" className="pmss-btn-chip pmss-btn-chip-secondary" onClick={() => setAll(true)}>
+              Select all
+            </button>
+            <button type="button" className="pmss-btn-chip pmss-btn-chip-secondary" onClick={() => setAll(false)}>
+              Clear all
+            </button>
+            <span className="text-xs text-neutral-500 self-center tabular-nums">
+              {selectedCount}/{blocks.length} sections
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {groups.map((g) => {
+              const selectedInGroup = g.blocks.filter((b) => include[b.id]).length
+              const allOn = selectedInGroup === g.blocks.length && g.blocks.length > 0
+              const expanded = openGroup === g.name
+              return (
+                <div key={g.name} className="rounded-lg border border-neutral-200 overflow-hidden">
+                  <div className="flex items-center gap-2 bg-neutral-50/80 px-3 py-2.5">
+                    <button
+                      type="button"
+                      className="flex-1 text-left flex items-center justify-between gap-2 min-w-0"
+                      onClick={() => setOpenGroup(expanded ? null : g.name)}
+                      aria-expanded={expanded}
+                    >
+                      <h3 className="text-sm font-semibold text-neutral-800 truncate">
+                        {g.name}
+                        <span className="ml-2 text-xs font-medium text-neutral-400">
+                          {selectedInGroup}/{g.blocks.length}
+                        </span>
+                      </h3>
+                      <span className="text-xs font-medium text-neutral-500 shrink-0">
+                        {expanded ? 'Hide' : 'Show'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-primary-700 shrink-0 px-1"
+                      onClick={() => setGroup(g.name, !allOn)}
+                    >
+                      {allOn ? 'Clear' : 'Select'}
+                    </button>
+                  </div>
+                  {expanded && (
+                    <div className="grid sm:grid-cols-2 gap-2 p-3 border-t border-neutral-100">
+                      {g.blocks.map((b) => (
+                        <label
+                          key={b.id}
+                          className={`flex items-start gap-2.5 px-3 py-2.5 rounded-lg border text-sm cursor-pointer ${
+                            include[b.id]
+                              ? 'border-primary-200 bg-primary-50/60'
+                              : 'border-neutral-200 bg-white'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                            checked={Boolean(include[b.id])}
+                            onChange={() => setInclude((prev) => ({ ...prev, [b.id]: !prev[b.id] }))}
+                          />
+                          <span>
+                            <span className="font-medium block">{b.label}</span>
+                            {b.description && (
+                              <span className="block text-xs text-neutral-500 mt-0.5">{b.description}</span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-xs text-neutral-500 mt-3">Open one group at a time to pick sections.</p>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="space-y-3">
+          {narrativeFields.every(([, blockId]) => !include[blockId]) ? (
+            <p className="text-sm text-neutral-500 rounded-lg border border-dashed border-neutral-200 px-4 py-6 text-center">
+              No notes section is selected. Go back to Sections if you want to include notes.
+            </p>
+          ) : (
+            narrativeFields.map(([key, blockId, label]) =>
+              include[blockId] ? (
+                <div key={key}>
+                  <label className="block text-sm font-medium mb-1">{label}</label>
+                  <textarea
+                    className="pmss-input min-h-[5rem] py-2"
+                    value={narrative[key]}
+                    onChange={(e) => setNarrative((n) => ({ ...n, [key]: e.target.value }))}
+                    placeholder={`Write ${label.toLowerCase()}…`}
+                  />
+                </div>
+              ) : null,
+            )
+          )}
+        </div>
+      )}
+
+      {step === 3 && (
+        <div>
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 px-4 py-3 mb-4 text-sm text-neutral-600">
+            <p>
+              <span className="font-semibold text-neutral-900">{title.trim() || 'Office Report'}</span>
+              {subtitle.trim() ? ` — ${subtitle.trim()}` : ''}
+            </p>
+            <p className="text-xs mt-1 tabular-nums">
+              {selectedCount}/{blocks.length} sections · {ROLE_LABELS[jurisdiction] ?? jurisdiction}
+            </p>
+          </div>
+
+          <div className="sticky bottom-3 z-10 flex flex-wrap gap-2 items-center border border-neutral-200 bg-white/95 backdrop-blur-sm shadow-md rounded-xl px-3 py-3">
+            <button type="button" className="pmss-btn-secondary text-sm h-9" disabled={busy} onClick={preview}>
+              Preview
+            </button>
+            <button type="button" className="pmss-btn-secondary text-sm h-9" disabled={busy} onClick={saveDraft}>
+              Save draft
+            </button>
+            <button type="button" className="pmss-btn-primary text-sm h-9" disabled={busy} onClick={openSubmit}>
+              Submit report
+            </button>
+            <button
+              type="button"
+              className="pmss-btn-secondary text-sm h-9"
+              disabled={busy}
+              onClick={() => setDownloadOpen(true)}
+            >
+              Download
+            </button>
+          </div>
+
+          {(mine.length > 0 || inbox.length > 0) && (
+            <div className="grid md:grid-cols-2 gap-4 mt-6 pt-5 border-t border-neutral-100">
+              <div>
+                <h3 className="text-sm font-semibold mb-2">My office reports</h3>
+                {mine.length === 0 ? (
+                  <p className="text-xs text-neutral-500">No saved reports yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {mine.slice(0, 5).map((r) => (
+                      <li key={r.id} className="text-sm flex justify-between gap-2">
+                        <span className="truncate">
+                          {r.title}
+                          <span className="text-xs text-neutral-500 block">
+                            {r.status}
+                            {r.recipientName ? ` → ${r.recipientName}` : ''}
+                          </span>
+                        </span>
+                        <Badge variant={r.status === 'submitted' ? 'success' : 'warning'}>{r.status}</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold mb-2">Submitted to me</h3>
+                {inbox.length === 0 ? (
+                  <p className="text-xs text-neutral-500">No inbound reports.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {inbox.slice(0, 5).map((r) => (
+                      <li key={r.id} className="text-sm flex justify-between gap-2 items-start">
+                        <span className="truncate">
+                          {r.title}
+                          <span className="text-xs text-neutral-500 block">
+                            From {r.authorName} · {ROLE_LABELS[r.authorRole] ?? r.authorRole}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-primary-700 shrink-0"
+                          onClick={() => setViewInbox(r)}
+                        >
+                          View
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-2 mt-6 pt-4 border-t border-neutral-100">
         <button
           type="button"
           className="pmss-btn-secondary text-sm h-9"
-          disabled={busy}
-          onClick={() => setDownloadOpen(true)}
+          disabled={step === 0}
+          onClick={goBack}
         >
-          Download
+          Back
         </button>
+        {step < steps.length - 1 ? (
+          <button type="button" className="pmss-btn-primary text-sm h-9" onClick={goNext}>
+            Continue
+          </button>
+        ) : (
+          <span className="text-xs text-neutral-500">Preview, save, submit, or download above.</span>
+        )}
       </div>
-
-      {(mine.length > 0 || inbox.length > 0) && (
-        <div className="grid md:grid-cols-2 gap-4 mt-6 pt-5 border-t border-neutral-100">
-          <div>
-            <h3 className="text-sm font-semibold mb-2">My office reports</h3>
-            {mine.length === 0 ? (
-              <p className="text-xs text-neutral-500">No saved reports yet.</p>
-            ) : (
-              <ul className="space-y-2">
-                {mine.slice(0, 5).map((r) => (
-                  <li key={r.id} className="text-sm flex justify-between gap-2">
-                    <span className="truncate">
-                      {r.title}
-                      <span className="text-xs text-neutral-500 block">
-                        {r.status}
-                        {r.recipientName ? ` → ${r.recipientName}` : ''}
-                      </span>
-                    </span>
-                    <Badge variant={r.status === 'submitted' ? 'success' : 'warning'}>{r.status}</Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold mb-2">Submitted to me</h3>
-            {inbox.length === 0 ? (
-              <p className="text-xs text-neutral-500">No inbound reports.</p>
-            ) : (
-              <ul className="space-y-2">
-                {inbox.slice(0, 5).map((r) => (
-                  <li key={r.id} className="text-sm flex justify-between gap-2 items-start">
-                    <span className="truncate">
-                      {r.title}
-                      <span className="text-xs text-neutral-500 block">
-                        From {r.authorName} · {ROLE_LABELS[r.authorRole] ?? r.authorRole}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      className="text-xs font-semibold text-primary-700 shrink-0"
-                      onClick={() => setViewInbox(r)}
-                    >
-                      View
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
 
       <Modal
         open={previewOpen}
@@ -550,7 +712,7 @@ export default function OfficeReportBuilder({
         open={submitOpen}
         onClose={() => setSubmitOpen(false)}
         title="Submit report"
-        description="Select one or more leaders to receive this report."
+        description="Select the role to send this report to, then confirm the recipient."
         footer={
           <>
             <button type="button" className="pmss-btn-secondary" onClick={() => setSubmitOpen(false)}>
@@ -559,7 +721,7 @@ export default function OfficeReportBuilder({
             <button
               type="button"
               className="pmss-btn-primary"
-              disabled={busy || selectedRecipientIds.length === 0}
+              disabled={busy || !selectedRole || selectedRecipientIds.length === 0}
               onClick={() => confirmSubmit(selectedRecipientIds)}
             >
               Submit{selectedRecipientIds.length > 0 ? ` (${selectedRecipientIds.length})` : ''}
@@ -567,31 +729,73 @@ export default function OfficeReportBuilder({
           </>
         }
       >
-        <div className="space-y-2 max-h-[min(50vh,360px)] overflow-y-auto pr-1">
-          {recipients.map((r) => {
-            const on = selectedRecipientIds.includes(r.id)
-            return (
-              <label
-                key={r.id}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm cursor-pointer ${
-                  on ? 'border-primary-200 bg-primary-50/60' : 'border-neutral-200 bg-white'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
-                  checked={on}
-                  onChange={() => toggleRecipient(r.id)}
-                />
-                <span>
-                  <span className="font-medium block">{r.displayName}</span>
-                  <span className="text-xs text-neutral-500">
-                    {ROLE_LABELS[r.appRole] ?? r.roleLabel ?? r.appRole}
-                  </span>
-                </span>
-              </label>
-            )
-          })}
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">
+              Send to role
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {roleOptions.map((role) => {
+                const on = selectedRole === role.id
+                return (
+                  <button
+                    key={role.id}
+                    type="button"
+                    className={`pmss-btn-chip text-left ${
+                      on ? 'pmss-btn-chip-primary' : 'pmss-btn-chip-secondary'
+                    }`}
+                    onClick={() => pickRole(role.id)}
+                  >
+                    {role.label}
+                    <span className="ml-1 opacity-70 tabular-nums">({role.count ?? 0})</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {selectedRole ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">
+                Recipients · {ROLE_LABELS[selectedRole] ?? selectedRole}
+              </p>
+              {recipientsForRole.length === 0 ? (
+                <p className="text-sm text-neutral-500 rounded-lg border border-dashed border-neutral-200 px-3 py-4">
+                  No active login for this role yet. Create their account in Settings, or choose another
+                  role.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-[min(40vh,280px)] overflow-y-auto pr-1">
+                  {recipientsForRole.map((r) => {
+                    const on = selectedRecipientIds.includes(r.id)
+                    return (
+                      <label
+                        key={`${r.roleKey ?? selectedRole}-${r.id}`}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm cursor-pointer ${
+                          on ? 'border-primary-200 bg-primary-50/60' : 'border-neutral-200 bg-white'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
+                          checked={on}
+                          onChange={() => toggleRecipient(r.id)}
+                        />
+                        <span>
+                          <span className="font-medium block">{r.displayName}</span>
+                          <span className="text-xs text-neutral-500">
+                            {r.roleLabel ?? ROLE_LABELS[r.roleKey] ?? ROLE_LABELS[r.appRole] ?? r.appRole}
+                          </span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-500">Choose a role above to see who can receive the report.</p>
+          )}
         </div>
       </Modal>
 

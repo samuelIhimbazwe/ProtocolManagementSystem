@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   FileText,
   Calendar,
@@ -29,11 +30,10 @@ import {
 } from '../lib/reportsExport'
 import {
   MINISTRY_REPORT_BLOCKS,
-  MINISTRY_REPORT_PRESETS,
   defaultIncludeMap,
   slugifyTitle,
 } from '../lib/reportBuilder'
-import ReportBuilder from '../components/ReportBuilder'
+import { emptySignatories } from '../lib/reportDocument'
 import ScheduleDownloadMenu from '../components/ScheduleDownloadMenu'
 
 const SECTIONS = [
@@ -85,9 +85,6 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
-  const [builderTitle, setBuilderTitle] = useState('Ministry Report')
-  const [builderSubtitle, setBuilderSubtitle] = useState('')
-  const [builderInclude, setBuilderInclude] = useState(() => defaultIncludeMap(MINISTRY_REPORT_BLOCKS))
 
   const showToast = (msg) => {
     setToast(msg)
@@ -148,25 +145,20 @@ export default function ReportsPage() {
   const att = report?.attendance?.monthly ?? {}
   const pub = report?.schedule?.published ?? {}
 
-  useEffect(() => {
-    const month = report?.overview?.monthLabel
-    if (month) setBuilderTitle(`${month} Ministry Report`)
-  }, [report?.overview?.monthLabel])
-
-  const exportOptions = () => ({
-    title: builderTitle.trim() || 'Ministry Report',
-    subtitle: builderSubtitle.trim(),
-    include: builderInclude,
-  })
-
-  const exportReport = async (format, options) => {
+  const exportReport = async (format) => {
     if (!report) {
       showToast('Report not loaded yet')
       return
     }
     try {
-      const opts = options ?? exportOptions()
-      const stamp = slugifyTitle(opts.title || report.overview?.monthLabel || 'report')
+      const title = `${o.monthLabel ?? 'Ministry'} Report`
+      const opts = {
+        title,
+        subtitle: '',
+        include: defaultIncludeMap(MINISTRY_REPORT_BLOCKS),
+        signatories: emptySignatories(),
+      }
+      const stamp = slugifyTitle(title)
       if (format === 'csv') {
         downloadReportsCsv(report, `pmss-ministry-report-${stamp}.csv`, opts)
         showToast('Report downloaded (CSV)')
@@ -245,19 +237,24 @@ export default function ReportsPage() {
         </p>
       )}
 
-      <ReportBuilder
-        title={builderTitle}
-        onTitleChange={setBuilderTitle}
-        subtitle={builderSubtitle}
-        onSubtitleChange={setBuilderSubtitle}
-        blocks={MINISTRY_REPORT_BLOCKS}
-        include={builderInclude}
-        onIncludeChange={setBuilderInclude}
-        presets={MINISTRY_REPORT_PRESETS}
-        onExport={(format) => exportReport(format, exportOptions())}
-        disabled={!report || loading}
-        hint="Build a full ministry pack or a focused export — cover, attendance, scheduling, roster, and activity."
-      />
+      <Link
+        to="/reports/builder"
+        className="pmss-card p-5 mb-6 block hover:border-primary-200 transition-colors group pmss-no-print"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <FileText className="w-4 h-4 text-primary-700 shrink-0" />
+              <h2 className="font-semibold text-neutral-900 group-hover:text-primary-800">Build reports</h2>
+            </div>
+            <p className="text-sm text-neutral-500">
+              Build a full ministry pack or a focused export — cover, attendance, scheduling, roster, and
+              activity.
+            </p>
+          </div>
+          <span className="text-sm font-semibold text-primary-700 shrink-0">Open →</span>
+        </div>
+      </Link>
 
       <SectionNav section={section} onChange={setSection} />
 

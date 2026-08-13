@@ -19,7 +19,7 @@ async function canRecord(req, serviceDate) {
   if (!payload?.teamAssignments) return false
   const user = await db.prepare(`SELECT display_name FROM users WHERE id = ?`).get(req.auth.sub)
   if (!user) return false
-  const today = process.env.PMSS_TODAY ?? '2026-08-02'
+  const today = (process.env.TMS_TODAY ?? process.env.PMSS_TODAY) ?? '2026-08-02'
   const duties = getActiveTeamLeadershipDuties(user.display_name, payload.teamAssignments, today)
   if (!duties.length) return false
   return duties.some((d) => isDutyWindowActive(d.serviceDate, today))

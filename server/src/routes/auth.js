@@ -55,7 +55,7 @@ router.post('/login', async (req, res) => {
   await audit('auth.login', user.id, { username: user.username })
 
   const token = signToken(user)
-  const today = process.env.PMSS_TODAY ?? '2026-08-02'
+  const today = (process.env.TMS_TODAY ?? process.env.PMSS_TODAY) ?? '2026-08-02'
   const payload = (await getPublishedPayload()) ?? (await getDraftPayload())
   const officeAccess =
     user.app_role === 'member'
@@ -75,7 +75,7 @@ router.get('/me', authMiddleware, async (req, res) => {
   if (!user || user.status === 'Deactivated') {
     return res.status(401).json({ error: 'Unauthorized' })
   }
-  const today = process.env.PMSS_TODAY ?? '2026-08-02'
+  const today = (process.env.TMS_TODAY ?? process.env.PMSS_TODAY) ?? '2026-08-02'
   const payload = (await getPublishedPayload()) ?? (await getDraftPayload())
   const officeAccess =
     user.app_role === 'member'

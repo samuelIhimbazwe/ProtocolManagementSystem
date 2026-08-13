@@ -1,4 +1,4 @@
-# PMSS UI themes
+# TMS UI themes
 
 Two visual options for the same layouts and flows.
 

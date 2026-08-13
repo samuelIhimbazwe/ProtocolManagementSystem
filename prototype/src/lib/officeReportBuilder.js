@@ -13,29 +13,36 @@ export const OFFICE_BLOCK_CATALOG = {
   narrativeHow: {
     id: 'narrativeHow',
     label: 'How it went',
-    description: 'Full written account of the period or service',
+    description: 'Full written account of the period or service (TL/VTL only)',
     group: 'Narrative',
     narrative: true,
   },
   narrativeIssues: {
     id: 'narrativeIssues',
     label: 'Issues & challenges',
-    description: 'Problems faced during the duty or period',
+    description: 'Problems faced during the duty or period (TL/VTL only)',
     group: 'Narrative',
     narrative: true,
   },
   narrativeSolutions: {
     id: 'narrativeSolutions',
     label: 'Solutions used',
-    description: 'Actions taken to address issues',
+    description: 'Actions taken to address issues (TL/VTL only)',
     group: 'Narrative',
     narrative: true,
   },
   narrativeRecs: {
     id: 'narrativeRecs',
     label: 'Recommendations',
-    description: 'Future recommendations for leadership',
+    description: 'Future recommendations for leadership (TL/VTL only)',
     group: 'Narrative',
+    narrative: true,
+  },
+  narrativeNotes: {
+    id: 'narrativeNotes',
+    label: 'Notes',
+    description: 'Optional notes for this report',
+    group: 'Notes',
     narrative: true,
   },
   dutyMeta: {
@@ -234,14 +241,11 @@ export const OFFICE_BLOCK_CATALOG = {
 
 const ids = (...list) => list.map((id) => OFFICE_BLOCK_CATALOG[id]).filter(Boolean)
 
-const CORE = ids(
-  'cover',
-  'narrativeHow',
-  'narrativeIssues',
-  'narrativeSolutions',
-  'narrativeRecs',
-)
-
+const CORE = ids('cover')
+/** Written service narrative — TL/VTL (team_duty) only. */
+const NARRATIVE_DUTY = ids('narrativeHow', 'narrativeIssues', 'narrativeSolutions', 'narrativeRecs')
+/** Single notes field for leadership / non-duty jurisdictions. */
+const NOTES = ids('narrativeNotes')
 const DUTY = ids('dutyMeta', 'dutyTeam')
 const ATTENDANCE = ids('attendance', 'sessions', 'memberAttendance')
 const SCHEDULING = ids(
@@ -332,6 +336,13 @@ export function blocksForJurisdiction(jurisdiction) {
   const list = [...CORE]
   const mods = new Set(access.modules)
 
+  // TL/VTL get the four narrative sections; leadership gets a single Notes field.
+  if (jurisdiction === 'team_duty' || mods.has('duty')) {
+    list.push(...NARRATIVE_DUTY)
+  } else {
+    list.push(...NOTES)
+  }
+
   if (mods.has('duty')) list.push(...DUTY)
   if (mods.has('attendance')) list.push(...ATTENDANCE)
   if (mods.has('scheduling')) list.push(...SCHEDULING)
@@ -347,13 +358,26 @@ export const JURISDICTION_BLOCKS = Object.fromEntries(
   Object.keys(JURISDICTION_ACCESS).map((j) => [j, blocksForJurisdiction(j)]),
 )
 
+/** Roles shown on Submit — pick who receives the report. */
+export const SUBMIT_RECIPIENT_ROLE_OPTIONS = [
+  { id: 'vtl', label: 'VTL' },
+  { id: 'tl', label: 'TL' },
+  { id: 'coordinator', label: 'Coordinator' },
+  { id: 'secretary', label: 'Secretary' },
+  { id: 'treasurer', label: 'Treasurer' },
+  { id: 'vice_president', label: 'Vice President' },
+  { id: 'president', label: 'President' },
+]
+
+export const ALL_SUBMIT_RECIPIENT_ROLES = SUBMIT_RECIPIENT_ROLE_OPTIONS.map((o) => o.id)
+
 export const JURISDICTION_RECIPIENT_ROLES = {
-  team_duty: ['coordinator', 'secretary', 'vice_president', 'president'],
-  treasurer: ['vice_president', 'president'],
-  secretary: ['coordinator', 'vice_president', 'president'],
-  coordinator: ['vice_president', 'president'],
-  vice_president: ['president'],
-  president: [],
+  team_duty: ALL_SUBMIT_RECIPIENT_ROLES,
+  treasurer: ALL_SUBMIT_RECIPIENT_ROLES,
+  secretary: ALL_SUBMIT_RECIPIENT_ROLES,
+  coordinator: ALL_SUBMIT_RECIPIENT_ROLES,
+  vice_president: ALL_SUBMIT_RECIPIENT_ROLES,
+  president: ALL_SUBMIT_RECIPIENT_ROLES,
 }
 
 export const ROLE_LABELS = {
@@ -364,6 +388,8 @@ export const ROLE_LABELS = {
   coordinator: 'Coordinator',
   member: 'Member',
   team_duty: 'Team Leader / VTL',
+  tl: 'TL',
+  vtl: 'VTL',
 }
 
 export function resolveJurisdiction(roleId, officeKind) {

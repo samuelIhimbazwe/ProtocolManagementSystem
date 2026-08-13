@@ -46,13 +46,11 @@ function OfficeReportEntryCard({ roleId, officeKind }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <FileText className="w-4 h-4 text-primary-700 shrink-0" />
-            <h2 className="font-semibold text-neutral-900 group-hover:text-primary-800">
-              Office report builder
-            </h2>
+            <h2 className="font-semibold text-neutral-900 group-hover:text-primary-800">Build reports</h2>
           </div>
           <p className="text-sm text-neutral-500">
-            Build a report from anything you can access ({ROLE_LABELS[jurisdiction] ?? jurisdiction}), preview it,
-            download it, and submit it to a leader.
+            Include any section you can access in your jurisdiction (
+            {ROLE_LABELS[jurisdiction] ?? jurisdiction}), then preview, download, or submit to a leader.
           </p>
         </div>
         <span className="text-sm font-semibold text-primary-700 shrink-0">Open →</span>
@@ -244,13 +242,17 @@ function PortalDashboard({ member, demoToday, isMemberRole, showOffice, teamAssi
   )
 }
 
-function OfficeDashboardLeadership({ permissions, roleId, navigate, stats, services, activity, notifications, monthLabel }) {
+function OfficeDashboardLeadership({
+  permissions,
+  roleId,
+  navigate,
+  stats,
+  services,
+  activity,
+  notifications,
+  monthLabel,
+}) {
   const roleLabel = ROLES.find((r) => r.id === roleId)?.label
-  const [toast, setToast] = useState('')
-  const showToast = (msg) => {
-    setToast(msg)
-    setTimeout(() => setToast(''), 2800)
-  }
   const quickActions = [
     { label: 'Generate Choir Schedule', icon: Music, to: '/scheduling?tab=choir' },
     { label: 'Build Service Teams', icon: UsersRound, to: '/scheduling?tab=teams' },
@@ -410,31 +412,28 @@ function OfficeDashboardLeadership({ permissions, roleId, navigate, stats, servi
       </div>
 
       <p className="text-xs text-neutral-400 mt-8">{roleLabel} · {monthLabel}</p>
-      {toast && (
-        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-card bg-neutral-900 text-white text-sm shadow-lg">
-          {toast}
-        </div>
-      )}
     </>
   )
 }
 
-function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }) {
+function OfficeDashboardTeamDuty({ activeDuties, allDuties, navigate, permissions, roleId, onToast }) {
   const [reportDuty, setReportDuty] = useState(null)
   const [toast, setToast] = useState('')
   const [reportStatusByService, setReportStatusByService] = useState({})
+  const duties = allDuties?.length ? allDuties : activeDuties ?? []
 
   const showToast = (msg) => {
     setToast(msg)
+    onToast?.(msg)
     setTimeout(() => setToast(''), 2800)
   }
 
   useEffect(() => {
-    if (!USE_API || !activeDuties?.length) return
+    if (!USE_API || !duties?.length) return
     let cancelled = false
     ;(async () => {
       const next = {}
-      for (const duty of activeDuties) {
+      for (const duty of duties) {
         try {
           const data = await fetchServiceReportForService(duty.serviceId)
           if (data.report) next[duty.serviceId] = data.report.status
@@ -447,7 +446,7 @@ function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }
     return () => {
       cancelled = true
     }
-  }, [activeDuties])
+  }, [duties])
 
   return (
     <>
@@ -455,11 +454,10 @@ function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }
         <div className="flex gap-3">
           <Clock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
           <div>
-            <h2 className="font-semibold text-neutral-900">Temporary team leadership access</h2>
+            <h2 className="font-semibold text-neutral-900">Team Leader / VTL access</h2>
             <p className="text-sm text-neutral-600 mt-1">
-              Office appears because you are assigned as Team Leader or Vice Team Leader. Use the office report
-              builder below (or a per-service report) to document how the service went. When the duty window
-              ends, this tab is hidden.
+              You can submit office reports whenever you are assigned as TL or VTL this month. Open{' '}
+              <strong>Build reports</strong> to compose, preview, download, or submit to a leader.
             </p>
           </div>
         </div>
@@ -468,9 +466,10 @@ function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }
       {USE_API && <OfficeReportEntryCard roleId={roleId} officeKind="team_duty" />}
 
       <div className="space-y-6">
-        {activeDuties.map((duty) => {
+        {duties.map((duty) => {
           const window = dutyWindowForService(duty.serviceDate)
           const reportStatus = reportStatusByService[duty.serviceId]
+          const windowActive = duty.windowActive ?? false
           return (
             <div key={`${duty.serviceId}-${duty.dutyRole}`} className="pmss-card p-5">
               <div className="flex flex-wrap justify-between gap-3 mb-4">
@@ -486,7 +485,8 @@ function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }
                   <h3 className="font-semibold text-lg mt-2">{duty.serviceName}</h3>
                   <p className="text-sm text-neutral-500">{duty.dateLabel}</p>
                   <p className="text-xs text-neutral-400 mt-2">
-                    Office active {window.starts} → {window.ends}
+                    Attendance window {window.starts} → {window.ends}
+                    {windowActive ? ' · active now' : ''}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -500,7 +500,7 @@ function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }
                       {reportStatus === 'submitted' ? 'View report' : 'Write service report'}
                     </button>
                   )}
-                  {canRecordAttendance(roleId, permissions) && (
+                  {canRecordAttendance(roleId, permissions) && windowActive && (
                     <button
                       type="button"
                       onClick={() => navigate('/attendance/record')}
@@ -521,7 +521,7 @@ function OfficeDashboardTeamDuty({ activeDuties, navigate, permissions, roleId }
               </div>
               <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Your team</p>
               <ul className="grid sm:grid-cols-2 gap-2 text-sm">
-                {duty.members.map((name) => (
+                {(duty.members ?? []).map((name) => (
                   <li
                     key={name}
                     className="px-3 py-2 rounded-lg bg-neutral-50 border border-neutral-100 flex justify-between"
@@ -573,12 +573,17 @@ export default function DashboardPage() {
   const { permissions, roleId, member, officeAccess, demoToday, teamAssignments } = useRole()
   const { payload } = useSchedule()
   const services = USE_API ? payload.services ?? [] : SERVICES
-  const { showOffice, kind: officeKind, activeDuties } = officeAccess
+  const { showOffice, kind: officeKind, activeDuties, allDuties } = officeAccess
   const paramView = searchParams.get('view')
   const [section, setSection] = useState(() => defaultSection(showOffice, officeKind, paramView))
   const [stats, setStats] = useState(DASHBOARD_STATS)
   const [activity, setActivity] = useState(ACTIVITIES)
   const [notifications, setNotifications] = useState(NOTIFICATIONS)
+  const [toast, setToast] = useState('')
+  const showToast = (msg) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2800)
+  }
 
   useEffect(() => {
     if (!USE_API) return
@@ -676,10 +681,18 @@ export default function DashboardPage() {
       {showingOffice && (officeKind === 'team_duty' || officeKind === 'duty') && (
         <OfficeDashboardTeamDuty
           activeDuties={activeDuties}
+          allDuties={allDuties}
           navigate={navigate}
           permissions={permissions}
           roleId={roleId}
+          onToast={showToast}
         />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-card bg-neutral-900 text-white text-sm shadow-lg">
+          {toast}
+        </div>
       )}
     </div>
   )

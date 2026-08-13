@@ -4,12 +4,23 @@ export async function fetchPilotConfig() {
   return apiFetch('/config/pilot', { auth: false })
 }
 
-export async function fetchCurrentSchedule() {
-  return apiFetch('/schedules/current')
+export async function fetchCurrentSchedule(monthKey) {
+  const q = monthKey ? `?month=${encodeURIComponent(monthKey)}` : ''
+  return apiFetch(`/schedules/current${q}`)
+}
+
+export async function fetchScheduleMonths() {
+  return apiFetch('/schedules/months')
 }
 
 export async function saveScheduleDraft(payload) {
   return apiFetch('/schedules/draft', { method: 'PUT', body: { payload } })
+}
+
+export async function makeScheduleMonthPublic(monthKey) {
+  return apiFetch(`/schedules/months/${encodeURIComponent(monthKey)}/make-public`, {
+    method: 'POST',
+  })
 }
 
 export async function validateScheduleDraft() {

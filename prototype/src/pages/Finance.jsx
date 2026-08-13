@@ -50,6 +50,7 @@ import {
   downloadFinanceReportsPdf,
 } from '../lib/financeReportExport'
 import ReportBuilder from '../components/ReportBuilder'
+import { emptySignatories } from '../lib/reportDocument'
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview', icon: Wallet },
@@ -310,6 +311,7 @@ export default function FinancePage() {
   const [error, setError] = useState('')
   const [builderTitle, setBuilderTitle] = useState('Finance Report')
   const [builderSubtitle, setBuilderSubtitle] = useState('')
+  const [builderSignatories, setBuilderSignatories] = useState(emptySignatories)
   const [builderInclude, setBuilderInclude] = useState(() => defaultIncludeMap(FINANCE_REPORT_BLOCKS))
 
   const [payOpen, setPayOpen] = useState(false)
@@ -433,6 +435,7 @@ export default function FinancePage() {
         title: builderTitle.trim() || 'Finance Report',
         subtitle: builderSubtitle.trim(),
         include: builderInclude,
+        signatories: builderSignatories,
       }
       const stamp = slugifyTitle(opts.title)
       if (format === 'csv') {
@@ -1085,6 +1088,8 @@ export default function FinancePage() {
                 onTitleChange={setBuilderTitle}
                 subtitle={builderSubtitle}
                 onSubtitleChange={setBuilderSubtitle}
+                signatories={builderSignatories}
+                onSignatoriesChange={setBuilderSignatories}
                 blocks={FINANCE_REPORT_BLOCKS}
                 include={builderInclude}
                 onIncludeChange={setBuilderInclude}

@@ -1,7 +1,7 @@
 const raw = import.meta.env.VITE_API_URL
 const demoMode = import.meta.env.VITE_DEMO_MODE === 'true'
 
-/** Empty string = same origin (unified PMSS server). */
+/** Empty string = same origin (unified TMS server). */
 export const API_BASE =
   raw === 'same-origin' || raw === '' ? '' : (raw ?? '').replace(/\/$/, '')
 

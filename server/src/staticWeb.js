@@ -4,7 +4,7 @@ import express from 'express'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-/** Serve Vite production build when running unified PMSS. */
+/** Serve Vite production build when running unified TMS. */
 export function mountWebApp(app) {
   const dist = path.join(__dirname, '..', '..', 'prototype', 'dist')
   app.use(express.static(dist, { index: false }))

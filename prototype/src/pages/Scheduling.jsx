@@ -18,7 +18,7 @@ import { PageHeader, DataTable, Badge } from '../layouts/AppShell'
 import { useRole } from '../context/RoleContext'
 import { useSchedule } from '../context/ScheduleContext'
 import { USE_API } from '../api/config'
-import { publishSchedule, archiveSchedule } from '../api/client'
+import { publishSchedule, archiveSchedule, makeScheduleMonthPublic } from '../api/client'
 import { fetchScheduleHistory, saveScheduleDraft } from '../api/schedule'
 import { PUBLISH_INFO, SCHEDULE_HISTORY } from '../data/mock'
 import { normalizeTeam } from '../components/TeamCardActions'
@@ -46,7 +46,21 @@ const TABS = [
 
 export default function SchedulingPage() {
   const { permissions } = useRole()
-  const { payload, editable, updatePayload, refresh, loading: scheduleLoading, source } = useSchedule()
+  const {
+    payload,
+    editable,
+    updatePayload,
+    refresh,
+    switchMonth,
+    flushDraft,
+    loading: scheduleLoading,
+    source,
+    monthsMeta,
+    visibility,
+    isPublic,
+    publishedMeta,
+    activeMonthKey,
+  } = useSchedule()
 
   const services = payload.services ?? []
   const leadership = payload.leadershipReview ?? []
@@ -119,9 +133,24 @@ export default function SchedulingPage() {
   const [publishMeta, setPublishMeta] = useState(PUBLISH_INFO)
   const [publishing, setPublishing] = useState(false)
   const [archiving, setArchiving] = useState(false)
+  const [makingPublic, setMakingPublic] = useState(false)
   const [calendarMonth, setCalendarMonth] = useState(payload.monthKey ?? '2026-08')
   const [leaderModal, setLeaderModal] = useState(null) // { index, field: 'tl'|'vtl' }
   const [leaderPick, setLeaderPick] = useState('')
+
+  const liveMonthKey = monthsMeta?.liveMonthKey ?? '2026-08'
+  const nextMonthKeyVal = monthsMeta?.nextMonthKey ?? null
+  const visibleMonthOptions = useMemo(() => {
+    const list = monthsMeta?.months ?? []
+    if (list.length) return list
+    return [
+      {
+        monthKey: payload.monthKey ?? liveMonthKey,
+        monthLabel: payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? liveMonthKey),
+        visible: true,
+      },
+    ]
+  }, [monthsMeta, payload.monthKey, payload.monthLabel, liveMonthKey])
 
   const showToast = (msg) => {
     setToast(msg)
@@ -132,6 +161,10 @@ export default function SchedulingPage() {
     if (payload.monthKey) setCalendarMonth(payload.monthKey)
   }, [payload.monthKey])
 
+  const selectMonth = async (monthKey) => {
+    setCalendarMonth(monthKey)
+    if (USE_API) await switchMonth(monthKey)
+  }
   const setLeadershipRows = useCallback(
     (next) => {
       const list = typeof next === 'function' ? next(leadership) : next
@@ -193,10 +226,13 @@ export default function SchedulingPage() {
     showToast('Leadership randomized')
   }
 
-  const generateMonthlyCalendar = () => {
+  const generateMonthlyCalendar = async () => {
     if (!calendarMonth || !/^\d{4}-\d{2}$/.test(calendarMonth)) {
       showToast('Select a month first')
       return
+    }
+    if (USE_API && calendarMonth !== (payload.monthKey || activeMonthKey)) {
+      await switchMonth(calendarMonth)
     }
     const label = monthLabelFromKey(calendarMonth)
     const generated = buildMonthlyServices(calendarMonth)
@@ -209,14 +245,17 @@ export default function SchedulingPage() {
       monthKey: calendarMonth,
       monthLabel: label,
       services: generated,
-      // Fresh month — choir/teams/leadership need rebuild for the new dates.
       choirAssignments: [],
       teamAssignments: [],
       leadershipReview: [],
       validationRows: [],
       validationSummary: { passed: 0, warnings: 0, errors: 0, status: 'PENDING' },
     }))
-    showToast(`Monthly calendar generated for ${label} (${generated.length} services)`)
+    const note =
+      calendarMonth === nextMonthKeyVal
+        ? ` — stays private for others until you make ${label} public`
+        : ''
+    showToast(`Monthly calendar generated for ${label} (${generated.length} services)${note}`)
   }
 
   const selectTab = (id) => {
@@ -245,17 +284,19 @@ export default function SchedulingPage() {
     if (USE_API) {
       setPublishing(true)
       try {
-        // Flush any pending draft edits before publish
+        await flushDraft()
         await saveScheduleDraft(payload)
-        const result = await publishSchedule()
-        showToast(`Schedule published ${result.versionLabel}`)
+        const monthKey = payload.monthKey || calendarMonth
+        const result = await publishSchedule(monthKey)
+        const privateNote = result.isPublic === false ? ' (private — make public when ready)' : ''
+        showToast(`Schedule published ${result.versionLabel}${privateNote}`)
         setPublishMeta({
-          status: 'Published',
+          status: result.isPublic === false ? 'Published (private)' : 'Published',
           version: result.versionLabel,
           publishedBy: result.publishedBy ?? publishMeta.publishedBy,
           publishedDate: new Date(result.publishedAt).toLocaleDateString(),
         })
-        await refresh()
+        await refresh(monthKey)
         selectTab('history')
       } catch (err) {
         showToast(err.message ?? 'Publish failed')
@@ -273,10 +314,11 @@ export default function SchedulingPage() {
     if (USE_API) {
       setArchiving(true)
       try {
-        const result = await archiveSchedule()
+        const monthKey = payload.monthKey || calendarMonth
+        const result = await archiveSchedule(monthKey)
         showToast(`Archived ${result.versionLabel}`)
         setPublishMeta((prev) => ({ ...prev, status: 'Archived' }))
-        await refresh()
+        await refresh(monthKey)
         selectTab('history')
       } catch (err) {
         showToast(err.message ?? 'Archive failed')
@@ -288,6 +330,21 @@ export default function SchedulingPage() {
     showToast('Schedule archived')
     setPublishMeta((prev) => ({ ...prev, status: 'Archived' }))
     selectTab('history')
+  }
+
+  const handleMakePublic = async () => {
+    if (!USE_API) return
+    const monthKey = payload.monthKey || calendarMonth
+    setMakingPublic(true)
+    try {
+      const result = await makeScheduleMonthPublic(monthKey)
+      showToast(`${monthLabelFromKey(result.monthKey)} is now visible to all users`)
+      await refresh(monthKey)
+    } catch (err) {
+      showToast(err.message ?? 'Could not make month public')
+    } finally {
+      setMakingPublic(false)
+    }
   }
 
   useEffect(() => {
@@ -319,13 +376,29 @@ export default function SchedulingPage() {
         title="Scheduling Center"
         description={
           canEdit
-            ? 'Generate, review, validate, and publish monthly protocol schedules'
+            ? 'Generate this month and prep next month privately — make next month public when members should see it'
             : `View ${source === 'published' ? 'published' : 'schedule'} assignments (read-only)`
         }
       />
 
       {USE_API && scheduleLoading && (
         <p className="text-sm text-neutral-500 mb-4">Loading schedule from API…</p>
+      )}
+
+      {canEdit && calendarMonth === nextMonthKeyVal && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-950">
+          Editing <strong>{monthLabelFromKey(calendarMonth)}</strong> (next month).{' '}
+          {visibility === 'public'
+            ? 'This month is public — other users can see it.'
+            : 'Other users still only see the live month until you publish and make this month public.'}{' '}
+          Live month: <strong>{monthLabelFromKey(liveMonthKey)}</strong>.
+        </div>
+      )}
+
+      {!canEdit && visibleMonthOptions.length > 1 && (
+        <p className="text-sm text-neutral-500 mb-4">
+          You can view {visibleMonthOptions.length} public months. Switch months below.
+        </p>
       )}
 
       <div className="pmss-tab-rail mb-6">
@@ -347,13 +420,47 @@ export default function SchedulingPage() {
       {tab === 'calendar' && (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-3 items-center">
-            <input
-              type="month"
-              value={calendarMonth}
-              onChange={(e) => setCalendarMonth(e.target.value)}
-              className="pmss-input w-auto"
-              aria-label="Schedule month"
-            />
+            {canEdit ? (
+              <input
+                type="month"
+                value={calendarMonth}
+                onChange={(e) => selectMonth(e.target.value)}
+                className="pmss-input w-auto"
+                aria-label="Schedule month"
+              />
+            ) : (
+              <select
+                className="pmss-input w-auto"
+                value={calendarMonth}
+                onChange={(e) => selectMonth(e.target.value)}
+                aria-label="Schedule month"
+              >
+                {visibleMonthOptions.map((m) => (
+                  <option key={m.monthKey} value={m.monthKey}>
+                    {m.monthLabel}
+                    {m.isLive ? ' (live)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+            {canEdit && nextMonthKeyVal && (
+              <button
+                type="button"
+                className="pmss-btn-chip pmss-btn-chip-secondary"
+                onClick={() => selectMonth(nextMonthKeyVal)}
+              >
+                Prep {monthLabelFromKey(nextMonthKeyVal)}
+              </button>
+            )}
+            {canEdit && calendarMonth !== liveMonthKey && (
+              <button
+                type="button"
+                className="pmss-btn-chip pmss-btn-chip-secondary"
+                onClick={() => selectMonth(liveMonthKey)}
+              >
+                Back to live month
+              </button>
+            )}
             {canEdit && (
               <button
                 type="button"
@@ -384,7 +491,7 @@ export default function SchedulingPage() {
             emptyDescription={
               canEdit
                 ? 'Pick a month, then click Generate monthly calendar to create Sunday, Tuesday, Friday, and Igaburo services.'
-                : 'Ask a coordinator to generate the calendar for this month.'
+                : 'Ask a coordinator to generate and publish this month.'
             }
           />
         </div>
@@ -512,7 +619,8 @@ export default function SchedulingPage() {
           <div className="lg:col-span-2 pmss-card p-5">
             <h2 className="font-semibold mb-2">Schedule preview</h2>
             <p className="text-sm text-neutral-500 mb-4">
-              {payload.monthLabel ?? 'August 2026'} — {services.length} services, choir & protocol teams assigned
+              {payload.monthLabel ?? monthLabelFromKey(calendarMonth)} — {services.length} services, choir &
+              protocol teams assigned
             </p>
             <div className="border border-neutral-200 rounded-card p-4 bg-neutral-50 text-sm space-y-2 max-h-64 overflow-auto">
               {services.map((s) => (
@@ -525,12 +633,24 @@ export default function SchedulingPage() {
           </div>
           <div className="pmss-card p-5 space-y-4">
             <div>
+              <p className="text-xs text-neutral-500">Visibility</p>
+              <Badge variant={isPublic || visibility === 'public' ? 'success' : 'warning'}>
+                {visibility === 'public' || isPublic
+                  ? 'Public'
+                  : visibility === 'private'
+                    ? 'Private (editors only)'
+                    : 'Draft'}
+              </Badge>
+            </div>
+            <div>
               <p className="text-xs text-neutral-500">Status</p>
               <Badge variant="success">{publishMeta.status}</Badge>
             </div>
             <div>
               <p className="text-xs text-neutral-500">Version</p>
-              <p className="font-semibold">{publishMeta.version}</p>
+              <p className="font-semibold">
+                {publishedMeta?.versionLabel ?? publishMeta.version}
+              </p>
             </div>
             <div>
               <p className="text-xs text-neutral-500">Published by</p>
@@ -541,25 +661,39 @@ export default function SchedulingPage() {
               <p className="text-sm font-medium">{publishMeta.publishedDate}</p>
             </div>
             {canEdit ? (
-            <>
-            <button
-              type="button"
-              className="pmss-btn-primary w-full"
-              onClick={handlePublish}
-              disabled={publishing}
-            >
-              {publishing ? 'Publishing…' : 'Publish schedule'}
-            </button>
-            <button
-              type="button"
-              className="pmss-btn-secondary w-full"
-              onClick={handleArchive}
-              disabled={archiving}
-            >
-              <Archive className="w-4 h-4" />
-              {archiving ? 'Archiving…' : 'Archive schedule'}
-            </button>
-            </>
+              <>
+                <button
+                  type="button"
+                  className="pmss-btn-primary w-full"
+                  onClick={handlePublish}
+                  disabled={publishing || !services.length}
+                >
+                  {publishing ? 'Publishing…' : 'Publish schedule'}
+                </button>
+                {publishedMeta && !isPublic && (
+                  <button
+                    type="button"
+                    className="pmss-btn-primary w-full"
+                    onClick={handleMakePublic}
+                    disabled={makingPublic}
+                  >
+                    {makingPublic ? 'Making public…' : 'Make month public'}
+                  </button>
+                )}
+                <p className="text-xs text-neutral-500">
+                  Next-month publishes stay private until you make them public. Live-month publishes are public
+                  immediately.
+                </p>
+                <button
+                  type="button"
+                  className="pmss-btn-secondary w-full"
+                  onClick={handleArchive}
+                  disabled={archiving}
+                >
+                  <Archive className="w-4 h-4" />
+                  {archiving ? 'Archiving…' : 'Archive schedule'}
+                </button>
+              </>
             ) : null}
             <ScheduleDownloadMenu
               label="Download schedule"

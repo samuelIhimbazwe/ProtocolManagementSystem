@@ -1,10 +1,10 @@
-# PMSS — Figma component property tables
+# TMS — Figma component property tables
 
-Use **component set** naming: `PMSS / [Layer] / [Name]`. Property names match React prototype flags where noted.
+Use **component set** naming: `TMS / [Layer] / [Name]`. Property names match React prototype flags where noted.
 
 ---
 
-## PMSS / Button
+## TMS / Button
 
 | Property | Values | Default |
 |----------|--------|---------|
@@ -18,7 +18,7 @@ Use **component set** naming: `PMSS / [Layer] / [Name]`. Property names match Re
 
 ---
 
-## PMSS / Input
+## TMS / Input
 
 | Property | Type | Values |
 |----------|------|--------|
@@ -31,7 +31,7 @@ Height 40px; radius 12; stroke 1px `neutral/border`.
 
 ---
 
-## PMSS / Badge
+## TMS / Badge
 
 | Property | Values |
 |----------|--------|
@@ -41,7 +41,7 @@ Padding 4×10; text 12 Medium.
 
 ---
 
-## PMSS / Stat card
+## TMS / Stat card
 
 | Property | Values |
 |----------|--------|
@@ -52,7 +52,7 @@ Vertical AL; padding 20; gap 8.
 
 ---
 
-## PMSS / Nav item
+## TMS / Nav item
 
 | Property | Values |
 |----------|--------|
@@ -63,7 +63,7 @@ Active: fill `primary/subtle`, 3px left bar `primary/default`.
 
 ---
 
-## PMSS / Sidebar
+## TMS / Sidebar
 
 | Property | Values |
 |----------|--------|
@@ -73,7 +73,7 @@ Active: fill `primary/subtle`, 3px left bar `primary/default`.
 
 ---
 
-## PMSS / Mobile bottom nav
+## TMS / Mobile bottom nav
 
 | Property | Values |
 |----------|--------|
@@ -84,7 +84,7 @@ Active: fill `primary/subtle`, 3px left bar `primary/default`.
 
 ---
 
-## PMSS / Top bar
+## TMS / Top bar
 
 | Property | Values |
 |----------|--------|
@@ -94,7 +94,7 @@ Active: fill `primary/subtle`, 3px left bar `primary/default`.
 
 ---
 
-## PMSS / Data table
+## TMS / Data table
 
 | Property | Values |
 |----------|--------|
@@ -105,7 +105,7 @@ Header 48px; row min 48px.
 
 ---
 
-## PMSS / Service card
+## TMS / Service card
 
 | Property | Values |
 |----------|--------|
@@ -116,7 +116,7 @@ Footer actions visible only when Mode = Edit.
 
 ---
 
-## PMSS / Scheduling tab
+## TMS / Scheduling tab
 
 | Property | Values |
 |----------|--------|
@@ -127,7 +127,7 @@ Set Visible per role frame (Member hides Validation, Publish, Leadership).
 
 ---
 
-## PMSS / Attendance status chip
+## TMS / Attendance status chip
 
 | Property | Values |
 |----------|--------|
@@ -138,7 +138,7 @@ Segmented group; selected = primary fill.
 
 ---
 
-## PMSS / Dashboard — Quick actions grid
+## TMS / Dashboard — Quick actions grid
 
 | Property | Values |
 |----------|--------|
@@ -148,7 +148,7 @@ False for President, Member, Treasurer, Secretary (Coordinator only).
 
 ---
 
-## PMSS / Page header
+## TMS / Page header
 
 | Property | Values |
 |----------|--------|

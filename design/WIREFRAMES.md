@@ -1,4 +1,4 @@
-# PMSS Wireframes (Lo-fi)
+# TMS Wireframes (Lo-fi)
 
 Use in Figma **Wireframes** page: `#E5E7EB` blocks, 8px radius, 8px spacing. Labels in 12px neutral-600.
 
@@ -7,7 +7,7 @@ Use in Figma **Wireframes** page: `#E5E7EB` blocks, 8px radius, 8px spacing. Lab
 ```
 ┌─────────────────────────────┐
 │         [logo 48]           │
-│           PMSS              │
+│           TMS              │
 │      subtitle line          │
 │  ┌───────────────────────┐  │
 │  │ Username              │  │

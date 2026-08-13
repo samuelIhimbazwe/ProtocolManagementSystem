@@ -146,18 +146,18 @@ async function openDatabase() {
     pool.on('error', (err) => {
       console.error('Unexpected Postgres pool error', err)
     })
-    console.log('PMSS database: Postgres (DATABASE_URL)')
+    console.log('TMS database: Postgres (DATABASE_URL)')
     return createPgDb(pool)
   }
 
   const { DatabaseSync } = await import('node:sqlite')
-  const dbPath = process.env.PMSS_DB_PATH ?? path.join(__dirname, '..', 'data', 'pmss.sqlite')
+  const dbPath = (process.env.TMS_DB_PATH ?? process.env.PMSS_DB_PATH) ?? path.join(__dirname, '..', 'data', 'pmss.sqlite')
   const dataDir = path.dirname(dbPath)
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
   const syncDb = new DatabaseSync(dbPath)
   syncDb.exec('PRAGMA journal_mode = WAL')
   syncDb.exec('PRAGMA foreign_keys = ON')
-  console.log(`PMSS database: SQLite (${dbPath})`)
+  console.log(`TMS database: SQLite (${dbPath})`)
   return createSqliteDb(syncDb)
 }
 
@@ -201,10 +201,11 @@ const SQLITE_SCHEMA = `
       payload_json TEXT NOT NULL,
       published_at TEXT,
       published_by_user_id TEXT,
+      is_public INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_one_draft ON schedule_versions(status) WHERE status = 'draft';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_one_draft_per_month ON schedule_versions(month_key) WHERE status = 'draft';
 
     CREATE TABLE IF NOT EXISTS members (
       id TEXT PRIMARY KEY,
@@ -403,10 +404,11 @@ const PG_SCHEMA = `
       payload_json TEXT NOT NULL,
       published_at TEXT,
       published_by_user_id TEXT,
+      is_public INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (${PG_NOW})
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_one_draft ON schedule_versions(status) WHERE status = 'draft';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_one_draft_per_month ON schedule_versions(month_key) WHERE status = 'draft';
 
     CREATE TABLE IF NOT EXISTS members (
       id TEXT PRIMARY KEY,
@@ -572,8 +574,48 @@ export async function initSchema() {
   await ensureColumn('contribution_submissions', 'evidence_file_mime', 'TEXT')
   await ensureColumn('contribution_submissions', 'evidence_file_path', 'TEXT')
   await ensureColumn('schedule_versions', 'archived_at', 'TEXT')
+  await ensureColumn('schedule_versions', 'is_public', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn('members', 'email', 'TEXT')
+  await ensureColumn('service_reports', 'recipient_user_id', 'TEXT')
+  await ensureColumn('service_reports', 'recipient_role', 'TEXT')
+  await migrateScheduleDraftIndex()
+  await backfillSchedulePublicFlags()
+}
+
+/** One draft per month (not one draft globally). */
+async function migrateScheduleDraftIndex() {
+  try {
+    await db.exec(`DROP INDEX IF EXISTS idx_schedule_one_draft`)
+  } catch {
+    /* ignore */
+  }
+  try {
+    await db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_one_draft_per_month ON schedule_versions(month_key) WHERE status = 'draft'`,
+    )
+  } catch {
+    /* ignore if dialect differs */
+  }
+}
+
+/** Existing published rows become public once (do not re-run after make-private). */
+async function backfillSchedulePublicFlags() {
+  try {
+    const flag = await db.prepare(`SELECT value_json FROM app_settings WHERE key = ?`).get('schedule_public_backfill_v1')
+    if (flag) return
+    await db
+      .prepare(`UPDATE schedule_versions SET is_public = 1 WHERE status = 'published'`)
+      .run()
+    await db
+      .prepare(
+        `INSERT INTO app_settings (key, value_json) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json`,
+      )
+      .run('schedule_public_backfill_v1', JSON.stringify({ at: new Date().toISOString() }))
+  } catch {
+    /* ignore */
+  }
 }
 
 async function ensureColumn(table, column, typeSql) {

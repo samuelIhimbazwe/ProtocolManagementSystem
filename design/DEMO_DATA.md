@@ -1,4 +1,4 @@
-# PMSS Demo Data
+# TMS Demo Data
 
 Canonical demo dataset for prototypes, Figma content, and QA. **Demo month: August 2026.**
 

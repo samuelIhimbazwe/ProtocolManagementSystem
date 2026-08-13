@@ -1,8 +1,14 @@
 import { downloadBlob } from './choirScheduleExport'
 import { formatRwf } from './money'
 import { downloadDocumentHtmlAsPdf } from './bulletinPdf.js'
+import {
+  buildFormalReportHtml,
+  escapeHtml as escapeReportHtml,
+  formalTableSection,
+  normalizeSignatories,
+} from './reportDocument.js'
 
-const DEFAULT_TITLE = 'PMSS Finance Report'
+const DEFAULT_TITLE = 'TMS Finance Report'
 
 const MONEY_HEADERS = new Set([
   'ministryGoal',
@@ -65,6 +71,7 @@ function normalizeOptions(options) {
     title: opts.title ?? DEFAULT_TITLE,
     subtitle: opts.subtitle ?? '',
     include: normalizeInclude(opts.include),
+    signatories: normalizeSignatories(opts),
   }
 }
 
@@ -450,29 +457,47 @@ export function downloadFinanceReportsExcel(data, filename = 'pmss-finance-repor
 }
 
 export async function downloadFinanceReportsPdf(data, options) {
-  const { title, subtitle, include } = normalizeOptions(options)
+  const { title, subtitle, include, signatories } = normalizeOptions(options)
   const sections = buildSections(data, include, title, subtitle)
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(title)}</title>
-  <style>
-    body { font-family: Georgia, 'Times New Roman', serif; color: #111; padding: 24px; }
-    h1 { font-size: 20px; margin: 0 0 8px; }
-    h2 { font-size: 14px; margin: 24px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
-    .subtitle { font-size: 13px; color: #333; margin: 0 0 4px; }
-    .meta { font-size: 12px; color: #555; margin-bottom: 16px; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 8px; }
-    th, td { border: 1px solid #ddd; padding: 4px 6px; text-align: left; }
-    th { background: #f5f5f5; }
-    p { font-size: 12px; color: #555; }
-  </style>
-</head>
-<body>
-  ${buildPdfHtml(sections, title, subtitle)}
-</body>
-</html>`
+  const contentSections = sections.filter((s) => s.id !== 'cover')
+  const body = contentSections
+    .map((section, i) => {
+      if (section.id === 'financeOverview') {
+        const rows = section.rows.map((row) => {
+          const [metric, value] = formatOverviewDisplayRow(row)
+          return { metric, value }
+        })
+        return formalTableSection(section.title, ['metric', 'value'], rows, { index: i + 1 })
+      }
+      const rows = (section.rows ?? []).map((row) => {
+        const out = {}
+        for (const h of section.headers) {
+          out[h] = formatDisplayCell(section.id, h, row[h], row)
+        }
+        return out
+      })
+      return formalTableSection(section.title, section.headers, rows, { index: i + 1 })
+    })
+    .join('\n')
+
+  const html = buildFormalReportHtml({
+    title,
+    productName: 'Time table Management System',
+    place: 'ADEPR Kacyiru',
+    reportType: title,
+    period: data?.overview?.monthLabel ?? data?.period ?? '—',
+    generatedAt: data?.generatedAt,
+    summary: [
+      { label: 'Report type', value: title },
+      { label: 'Period', value: data?.overview?.monthLabel ?? '—' },
+      { label: 'Sections', value: String(contentSections.length) },
+    ],
+    bodyHtml: [
+      subtitle ? `<p style="margin:-8px 0 18px;color:var(--muted)">${escapeReportHtml(subtitle)}</p>` : '',
+      body,
+    ].join('\n'),
+    signatories,
+  })
   const safe = String(title || 'finance-report')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

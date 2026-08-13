@@ -46,7 +46,7 @@ export function BulletinDocument({ id, title, subtitle, children, footer, canEdi
   const [docTitle, setDocTitle] = useState(title)
   const [docSubtitle, setDocSubtitle] = useState(subtitle ?? '')
   const [docFooter, setDocFooter] = useState(footer ?? '')
-  const [brand, setBrand] = useState('Protocol Ministry')
+  const [brand, setBrand] = useState('Time table Management')
 
   useEffect(() => setDocTitle(title), [title])
   useEffect(() => setDocSubtitle(subtitle ?? ''), [subtitle])

@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 
 const db = new DatabaseSync('C:/Users/ihimb/OneDrive/Documents/PMS/server/data/pmss.sqlite')
-const today = process.env.PMSS_TODAY ?? '2026-08-02'
+const today = (process.env.TMS_TODAY ?? process.env.PMSS_TODAY) ?? '2026-08-02'
 const pub = db
   .prepare(
     `SELECT payload_json, month_key FROM schedule_versions

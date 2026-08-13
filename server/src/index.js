@@ -44,7 +44,7 @@ app.use(express.json({ limit: '8mb' }))
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
-    service: 'pmss-api',
+    service: 'tms-api',
     db: process.env.DATABASE_URL ? 'postgres' : 'sqlite',
   })
 })
@@ -77,7 +77,7 @@ app.use((err, _req, res, _next) => {
 
 app.listen(port, () => {
   const mode = serveWeb ? 'API + web UI' : 'API only'
-  console.log(`PMSS listening on http://localhost:${port} (${mode})`)
+  console.log(`TMS listening on http://localhost:${port} (${mode})`)
   if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'change-me-in-production')) {
     console.warn('WARNING: Set a strong JWT_SECRET in production.')
   }

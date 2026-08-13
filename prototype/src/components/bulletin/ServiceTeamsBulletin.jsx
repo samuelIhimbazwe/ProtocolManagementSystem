@@ -197,7 +197,7 @@ export default function ServiceTeamsBulletin({
   const [memberOverrides, setMemberOverrides] = useState({})
   const [roleOverrides, setRoleOverrides] = useState({})
   const [footerLines, setFooterLines] = useState([
-    `Byateguwe na Minisiteri ya Protocole · ${monthLabel}`,
+    `Byateguwe na Minisiteri y' Abadiyakoni · ${monthLabel}`,
     "Byagenzuwe n'Umuyobozi w'Itorero",
     "Byemejwe n'Umushumba w'Itorero",
   ])
@@ -209,7 +209,7 @@ export default function ServiceTeamsBulletin({
   useEffect(() => {
     setFooterLines((prev) => {
       const next = [...prev]
-      next[0] = `Byateguwe na Minisiteri ya Protocole · ${monthLabel}`
+      next[0] = `Byateguwe na Minisiteri y' Abadiyakoni · ${monthLabel}`
       return next
     })
   }, [monthLabel])

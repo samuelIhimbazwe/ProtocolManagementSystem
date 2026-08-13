@@ -16,6 +16,14 @@ import {
 
 export const SEED_PASSWORD = 'Password123!'
 
+/** Plain protocol member — never TL/VTL in the default August 2026 schedule. */
+export const REGULAR_MEMBER_DEMO = {
+  memberName: 'Théogène Hakizimana',
+  username: 't.hakizimana',
+  email: 't.hakizimana@church.internal',
+  displayName: 'Théogène Hakizimana',
+}
+
 export { usernameFromName }
 
 export async function buildDefaultSchedulePayload(members) {
@@ -109,6 +117,9 @@ export async function seedDatabase({ force = false } = {}) {
   if (userCount > 0 && !force) {
     console.log('Database already seeded (%d users). Use --force to reseed.', userCount)
     await seedFinanceDemo()
+    await ensureRegularMemberDemo()
+    await ensureLeadershipDemos()
+    await ensureDutyLeaderDemos()
     return
   }
 
@@ -200,8 +211,8 @@ export async function seedDatabase({ force = false } = {}) {
     publishedAt: new Date().toISOString(),
   }
   await db.prepare(
-    `INSERT INTO schedule_versions (id, version_label, status, month_key, payload_json, published_at, published_by_user_id)
-     VALUES (?, 'V1', 'published', '2026-08', ?, datetime('now'), ?)`,
+    `INSERT INTO schedule_versions (id, version_label, status, month_key, payload_json, published_at, published_by_user_id, is_public)
+     VALUES (?, 'V1', 'published', '2026-08', ?, datetime('now'), ?, 1)`,
   ).run(publishId, JSON.stringify(publishedPayload), coordinator?.id ?? null)
 
   await audit('system.seed', null, {
@@ -242,6 +253,167 @@ export async function seedDatabase({ force = false } = {}) {
   )
 
   await seedFinanceDemo()
+  await ensureRegularMemberDemo()
+  await ensureLeadershipDemos()
+  await ensureDutyLeaderDemos()
+}
+
+/** Ensure president / VP / secretary / treasurer / coordinator logins exist and stay usable. */
+export async function ensureLeadershipDemos() {
+  const hash = await bcrypt.hash(SEED_PASSWORD, 10)
+  const roleMap = {
+    President: 'president',
+    'Vice President': 'vice_president',
+    Secretary: 'secretary',
+    Treasurer: 'treasurer',
+    Coordinator: 'coordinator',
+  }
+  let created = 0
+  let repaired = 0
+  for (const lead of ADMIN_ROSTER) {
+    const username = usernameFromName(lead.name)
+    const appRole = roleMap[lead.role] ?? 'member'
+    const email = `${username}@church.internal`
+    const member = await db
+      .prepare(`SELECT id FROM members WHERE id = ? OR name = ? LIMIT 1`)
+      .get(lead.id, lead.name)
+
+    let user = await db
+      .prepare(`SELECT * FROM users WHERE username = ? COLLATE NOCASE`)
+      .get(username)
+    if (!user && member?.id) {
+      user = await db.prepare(`SELECT * FROM users WHERE member_id = ?`).get(member.id)
+    }
+    if (!user) {
+      user = await db
+        .prepare(`SELECT * FROM users WHERE app_role = ? AND status = 'Active' LIMIT 1`)
+        .get(appRole)
+      // Only reuse empty role slots — never steal another leadership username.
+      if (user && user.username && String(user.username).toLowerCase() !== username) {
+        user = null
+      }
+    }
+
+    if (!user) {
+      await db.prepare(`
+        INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'Active')
+      `).run(uuid(), username, email, hash, member?.id ?? lead.id, lead.name, appRole)
+      created += 1
+      continue
+    }
+
+    const needsRepair =
+      user.app_role !== appRole ||
+      user.status !== 'Active' ||
+      String(user.username).toLowerCase() !== username ||
+      String(user.email ?? '').toLowerCase() !== email
+
+    // Always keep demo leadership passwords in sync for local testing.
+    await db.prepare(
+      `UPDATE users SET
+        username = ?, email = ?, password_hash = ?, member_id = ?,
+        display_name = ?, app_role = ?, status = 'Active'
+       WHERE id = ?`,
+    ).run(username, email, hash, member?.id ?? user.member_id, lead.name, appRole, user.id)
+    if (needsRepair) repaired += 1
+  }
+  if (created > 0 || repaired > 0) {
+    console.log(
+      'Leadership demos: created %d, repaired %d (password %s).',
+      created,
+      repaired,
+      SEED_PASSWORD,
+    )
+  } else {
+    console.log('Leadership demos: passwords refreshed for %d accounts.', ADMIN_ROSTER.length)
+  }
+}
+
+/** Idempotent login for testing the member portal (no TL/VTL duties). */
+export async function ensureRegularMemberDemo() {
+  const existing = await db
+    .prepare(`SELECT id FROM users WHERE username = ? COLLATE NOCASE`)
+    .get(REGULAR_MEMBER_DEMO.username)
+  if (existing) return
+
+  const member = await db
+    .prepare(`SELECT id FROM members WHERE name = ? LIMIT 1`)
+    .get(REGULAR_MEMBER_DEMO.memberName)
+  if (!member) {
+    console.warn('Regular member demo: roster entry not found (%s).', REGULAR_MEMBER_DEMO.memberName)
+    return
+  }
+
+  const hash = await bcrypt.hash(SEED_PASSWORD, 10)
+  await db.prepare(`
+    INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'member', 'Active')
+  `).run(
+    uuid(),
+    REGULAR_MEMBER_DEMO.username,
+    REGULAR_MEMBER_DEMO.email,
+    hash,
+    member.id,
+    REGULAR_MEMBER_DEMO.displayName,
+  )
+  console.log(
+    'Seeded regular member demo: %s — password %s (never TL/VTL on default schedule)',
+    REGULAR_MEMBER_DEMO.email,
+    SEED_PASSWORD,
+  )
+}
+
+/** Ensure TL/VTL people on the schedule have logins (for report submit targets). */
+export async function ensureDutyLeaderDemos() {
+  const published = await db
+    .prepare(
+      `SELECT payload_json FROM schedule_versions WHERE status = 'published' ORDER BY published_at DESC LIMIT 1`,
+    )
+    .get()
+  const draft = await db
+    .prepare(`SELECT payload_json FROM schedule_versions WHERE status = 'draft' LIMIT 1`)
+    .get()
+  const payload = published
+    ? JSON.parse(published.payload_json)
+    : draft
+      ? JSON.parse(draft.payload_json)
+      : null
+  const teams = payload?.teamAssignments ?? []
+  const names = new Set()
+  for (const t of teams) {
+    if (t.teamLeader) names.add(String(t.teamLeader).trim())
+    if (t.viceTeamLeader) names.add(String(t.viceTeamLeader).trim())
+  }
+  if (!names.size) return
+
+  const hash = await bcrypt.hash(SEED_PASSWORD, 10)
+  let created = 0
+  for (const name of names) {
+    const member = await db.prepare(`SELECT id, name, email FROM members WHERE name = ? LIMIT 1`).get(name)
+    if (!member) continue
+    const linked = await db
+      .prepare(`SELECT id FROM users WHERE member_id = ? LIMIT 1`)
+      .get(member.id)
+    if (linked) continue
+    let username = usernameFromName(name)
+    let n = 2
+    while (
+      await db.prepare(`SELECT id FROM users WHERE username = ? COLLATE NOCASE`).get(username)
+    ) {
+      username = `${usernameFromName(name)}${n}`
+      n += 1
+    }
+    const email = member.email || `${username}@church.internal`
+    await db.prepare(`
+      INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'member', 'Active')
+    `).run(uuid(), username, email, hash, member.id, name)
+    created += 1
+  }
+  if (created > 0) {
+    console.log('Seeded %d TL/VTL login(s) for report submit targets (password %s).', created, SEED_PASSWORD)
+  }
 }
 
 /** Idempotent finance pilot data (runs on every boot if empty). */
@@ -255,19 +427,19 @@ export async function seedFinanceDemo() {
   const cash = uuid()
   await db.prepare(
     `INSERT INTO payment_methods (id, kind, label, provider, account_name, account_number, instructions, sort_order)
-     VALUES (?, 'mobile_money', 'MTN MoMo', 'MTN', 'Protocol Ministry Treasurer', '078XXXXXXX', 'Use merchant name Protocol Ministry', 1)`,
+     VALUES (?, 'mobile_money', 'MTN MoMo', 'MTN', 'TMS Treasurer', '078XXXXXXX', 'Use merchant name TMS Ministry', 1)`,
   ).run(momo)
   await db.prepare(
     `INSERT INTO payment_methods (id, kind, label, provider, account_name, account_number, instructions, sort_order)
-     VALUES (?, 'mobile_money', 'Airtel Money', 'Airtel', 'Protocol Ministry Treasurer', '073XXXXXXX', NULL, 2)`,
+     VALUES (?, 'mobile_money', 'Airtel Money', 'Airtel', 'TMS Treasurer', '073XXXXXXX', NULL, 2)`,
   ).run(airtel)
   await db.prepare(
     `INSERT INTO payment_methods (id, kind, label, provider, account_name, account_number, instructions, sort_order)
-     VALUES (?, 'bank', 'Bank of Kigali', 'Bank of Kigali', 'Protocol Ministry', '123456789', 'Account name: Protocol Ministry', 3)`,
+     VALUES (?, 'bank', 'Bank of Kigali', 'Bank of Kigali', 'TMS Ministry', '123456789', 'Account name: TMS Ministry', 3)`,
   ).run(bank)
   await db.prepare(
     `INSERT INTO payment_methods (id, kind, label, provider, account_name, account_number, instructions, sort_order)
-     VALUES (?, 'cash', 'Cash', NULL, 'Protocol Ministry Treasurer', NULL, 'Hand to Treasurer during office hours', 4)`,
+     VALUES (?, 'cash', 'Cash', NULL, 'TMS Treasurer', NULL, 'Hand to Treasurer during office hours', 4)`,
   ).run(cash)
 
   const monthly = uuid()

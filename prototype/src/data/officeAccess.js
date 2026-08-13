@@ -32,16 +32,12 @@ export function isDutyWindowActive(serviceDate, today = DEMO_TODAY) {
 }
 
 /**
- * TL/VTL assignments where the temporary Office tab should be visible.
+ * TL/VTL assignments for a member (entire month schedule).
  */
-export function getActiveTeamLeadershipDuties(memberName, teamAssignments, today = DEMO_TODAY) {
-  if (!memberName) return []
+export function getTeamLeadershipAssignments(memberName, teamAssignments) {
+  if (!memberName || !teamAssignments?.length) return []
   return teamAssignments
-    .filter(
-      (t) =>
-        (t.teamLeader === memberName || t.viceTeamLeader === memberName) &&
-        isDutyWindowActive(t.serviceDate, today),
-    )
+    .filter((t) => t.teamLeader === memberName || t.viceTeamLeader === memberName)
     .map((t) => {
       const { starts, ends } = dutyWindowForService(t.serviceDate)
       return {
@@ -60,6 +56,15 @@ export function getActiveTeamLeadershipDuties(memberName, teamAssignments, today
     })
 }
 
+/**
+ * TL/VTL assignments where the temporary attendance window is active.
+ */
+export function getActiveTeamLeadershipDuties(memberName, teamAssignments, today = DEMO_TODAY) {
+  return getTeamLeadershipAssignments(memberName, teamAssignments).filter((t) =>
+    isDutyWindowActive(t.serviceDate, today),
+  )
+}
+
 export function getMemberTeamAssignments(memberName, teamAssignments, today = DEMO_TODAY) {
   if (!memberName) return []
   return teamAssignments.filter(
@@ -69,13 +74,21 @@ export function getMemberTeamAssignments(memberName, teamAssignments, today = DE
 
 export function resolveOfficeAccess({ roleId, memberName, teamAssignments, today = DEMO_TODAY }) {
   const permanent = isLeadershipRole(roleId)
-  const activeDuties = permanent ? [] : getActiveTeamLeadershipDuties(memberName, teamAssignments, today)
-  const showOffice = permanent || activeDuties.length > 0
+  const allDuties = permanent
+    ? []
+    : getTeamLeadershipAssignments(memberName, teamAssignments).map((d) => ({
+        ...d,
+        windowActive: isDutyWindowActive(d.serviceDate, today),
+      }))
+  const activeDuties = allDuties.filter((d) => d.windowActive)
+  // Unlock Office for any TL/VTL assignment this month so they can always submit reports.
+  const showOffice = permanent || allDuties.length > 0
 
   return {
     showOffice,
-    kind: permanent ? 'leadership' : activeDuties.length ? 'team_duty' : null,
+    kind: permanent ? 'leadership' : allDuties.length ? 'team_duty' : null,
     activeDuties,
+    allDuties,
     today,
   }
 }

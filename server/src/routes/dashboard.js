@@ -49,7 +49,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
     )
     .get()
 
-  const today = process.env.PMSS_TODAY ?? '2026-08-02'
+  const today = (process.env.TMS_TODAY ?? process.env.PMSS_TODAY) ?? '2026-08-02'
   const payload = (await getPublishedPayload()) ?? (await getDraftPayload())
   const services = payload?.services ?? []
   const upcomingServices = services.filter((s) => s.date >= today).length

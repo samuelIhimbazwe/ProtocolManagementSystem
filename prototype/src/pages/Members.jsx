@@ -310,7 +310,7 @@ export default function MembersPage() {
 
       <PageHeader
         title="Members"
-        description="Manage protocol ministry roster"
+        description="Manage TMS roster"
         actions={
           permissions.manageMembers ? (
             <>

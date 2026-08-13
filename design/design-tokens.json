@@ -1,9 +1,9 @@
 {
   "$schema": "https://design-tokens.github.io/community-group/format/",
   "meta": {
-    "product": "PMSS",
+    "product": "TMS",
     "version": "1.0.0",
-    "description": "Protocol Management & Scheduling System — import into Figma Variables or Style Dictionary"
+    "description": "Time table Management System — import into Figma Variables or Style Dictionary"
   },
   "color": {
     "primary": {

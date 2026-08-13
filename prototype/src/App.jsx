@@ -11,6 +11,7 @@ import AttendanceDashboardPage from './pages/AttendanceDashboard'
 import AttendanceRecordPage from './pages/AttendanceRecord'
 import SchedulingPage from './pages/Scheduling'
 import ReportsPage from './pages/Reports'
+import ReportsBuilderPage from './pages/ReportsBuilderPage'
 import FinancePage from './pages/Finance'
 import FinanceReportDetailPage from './pages/FinanceReportDetail'
 import SettingsPage from './pages/Settings'
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="finance" element={<FinancePage />} />
         <Route path="finance/reports/:reportId" element={<FinanceReportDetailPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="reports/builder" element={<ReportsBuilderPage />} />
         <Route path="office-reports" element={<OfficeReportBuilderPage />} />
         <Route path="activity" element={<ActivityPage />} />
         <Route path="notifications" element={<NotificationsPage />} />

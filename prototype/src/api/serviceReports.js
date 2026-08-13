@@ -23,3 +23,7 @@ export function updateServiceReport(id, body) {
 export function submitServiceReport(id, body) {
   return apiFetch(`/service-reports/${id}/submit`, { method: 'POST', body })
 }
+
+export function fetchServiceReportRecipients() {
+  return apiFetch('/service-reports/meta/recipients')
+}

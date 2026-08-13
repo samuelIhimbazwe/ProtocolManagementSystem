@@ -1,6 +1,6 @@
-# PMSS — Figma Production Handoff
+# TMS — Figma Production Handoff
 
-**Protocol Management & Scheduling System**  
+**Time table Management System**  
 Target: Church leadership presentation + developer implementation  
 Design language: Linear / Notion / Stripe Dashboard (simplified)
 
@@ -8,7 +8,7 @@ Design language: Linear / Notion / Stripe Dashboard (simplified)
 
 ## 1. Figma file structure
 
-Create one Figma file: **`PMSS — Product UI v1`**
+Create one Figma file: **`TMS — Product UI v1`**
 
 ```
 📁 Cover
@@ -89,7 +89,7 @@ Create one Figma file: **`PMSS — Product UI v1`**
 
 ## 3. Figma Variables (map from `design-tokens.json`)
 
-**Collection: PMSS / Color**
+**Collection: TMS / Color**
 
 - `primary/default` → `#2563EB`
 - `primary/subtle` → `#EFF6FF`
@@ -102,9 +102,9 @@ Create one Figma file: **`PMSS — Product UI v1`**
 - `semantic/warning` → `#F59E0B`
 - `semantic/error` → `#EF4444`
 
-**Collection: PMSS / Radius** — `sm` 8, `md` 12, `lg` 16
+**Collection: TMS / Radius** — `sm` 8, `md` 12, `lg` 16
 
-**Collection: PMSS / Spacing** — 4, 8, 12, 16, 24, 32, 48
+**Collection: TMS / Spacing** — 4, 8, 12, 16, 24, 32, 48
 
 ---
 
@@ -142,7 +142,7 @@ Create one Figma file: **`PMSS — Product UI v1`**
 | Validation row | Severity icon + rule + service link |
 | Member profile sections | Accordion on mobile |
 
-**Naming**: `PMSS / [Category] / [Name]`
+**Naming**: `TMS / [Category] / [Name]`
 
 ---
 
@@ -151,7 +151,7 @@ Create one Figma file: **`PMSS — Product UI v1`**
 ### Screen 1 — Login
 
 - Center card 400px (mobile: full width minus 32)
-- Logo 48px, title “PMSS”, subtitle “Protocol Management & Scheduling”
+- Logo 48px, title “TMS”, subtitle “Time table Management”
 - Fields, remember me row, primary CTA full width
 - Link “Forgot password?”
 

@@ -9,7 +9,6 @@ import {
   groupChoirByWeek,
   parseBulletinDateParts,
   shortChoirDisplayName,
-  weekChoirGridReady,
   weekRangeLabelFromItems,
 } from '../../lib/bulletinWeeks'
 
@@ -47,17 +46,6 @@ function cellDate(weekItems, bucket) {
   return formatBulletinDateSlash(hit.parts)
 }
 
-function choirServiceBarLabel(row, year) {
-  const parts = parseBulletinDateParts(row.date, year)
-  const date = formatBulletinDateSlash(parts)
-  const svc = row.service ?? ''
-  if (/Tuesday/i.test(svc)) return `Kuwa kabiri ${date}`
-  if (/Friday/i.test(svc)) return `Kuwa gatanu ${date}`
-  if (/Sunday Service 1/i.test(svc)) return `Iteraniro rya mbere ${date}`
-  if (/Sunday Service 2/i.test(svc)) return `Iteraniro rya kabiri ${date}`
-  return `${svc} ${date}`
-}
-
 function normalizeEditedChoirName(edited, previous) {
   const next = String(edited ?? '').trim()
   if (!next) return ''
@@ -70,57 +58,24 @@ function normalizeEditedChoirName(edited, previous) {
 function ChoirCell({ names, canEdit, displayShort, onNameChange }) {
   return (
     <td className="pmss-choir-cell">
-      {(names.length ? names : canEdit ? [''] : []).map((n, i) => {
-        const display = displayShort && n ? shortChoirDisplayName(n) : n
+      {(names.length ? names : canEdit ? [''] : ['—']).map((n, i) => {
+        const display = !n || n === '—' ? n : displayShort ? shortChoirDisplayName(n) : n
         return (
           <div key={`${n}-${i}`} className="pmss-choir-cell-line">
-            <BulletinEditable
-              value={display}
-              placeholder="Choir"
-              onChange={canEdit ? (v) => onNameChange(i, v) : undefined}
-              disabled={!canEdit}
-            />
+            {n === '—' && !canEdit ? (
+              <span className="text-neutral-400">—</span>
+            ) : (
+              <BulletinEditable
+                value={display === '—' ? '' : display}
+                placeholder="Choir"
+                onChange={canEdit ? (v) => onNameChange(i, v) : undefined}
+                disabled={!canEdit}
+              />
+            )}
           </div>
         )
       })}
     </td>
-  )
-}
-
-function ChoirServiceFallback({
-  row,
-  year,
-  canEdit,
-  titleOverride,
-  onTitleChange,
-  onChoirChange,
-}) {
-  const names = parseChoirList(row.choirs)
-  const title = titleOverride ?? choirServiceBarLabel(row, year)
-  if (!names.length && !canEdit) return null
-  return (
-    <div className="pmss-bulletin-service-block">
-      <div className="pmss-bulletin-service-bar pmss-bulletin-service-bar--choir">
-        <span aria-hidden>➤</span>{' '}
-        <BulletinEditable
-          value={title}
-          onChange={canEdit ? onTitleChange : undefined}
-          disabled={!canEdit}
-        />
-      </div>
-      <ul className="pmss-choir-fallback-list">
-        {(names.length ? names : ['']).map((n, i) => (
-          <li key={`${n}-${i}`}>
-            <BulletinEditable
-              value={canEdit ? n : shortChoirDisplayName(n)}
-              placeholder="Choir"
-              onChange={canEdit ? (v) => onChoirChange(i, v) : undefined}
-              disabled={!canEdit}
-            />
-          </li>
-        ))}
-      </ul>
-    </div>
   )
 }
 
@@ -167,21 +122,19 @@ export default function ChoirScheduleBulletin({
     () => (assignments ?? []).filter((row) => assignmentHasChoirs(row, parseChoirList) || canEdit),
     [assignments, canEdit],
   )
-  const regular = withChoirs.filter((row) => choirServiceBucket(row.service) !== 'igaburo')
+  const regular = withChoirs.filter((row) => {
+    const bucket = choirServiceBucket(row.service)
+    return bucket !== 'igaburo' && bucket !== 'other'
+  })
+  const otherRows = withChoirs.filter((row) => choirServiceBucket(row.service) === 'other')
   const igaburoRows = withChoirs.filter((row) => choirServiceBucket(row.service) === 'igaburo')
   const weeks = groupChoirByWeek(regular, year)
 
-  const gridWeeks = []
-  const fallbackRows = []
-
-  weeks.forEach(([weekKey, items], weekIndex) => {
+  // Always render the weekly table grid (empty cells when a slot has no choirs yet).
+  const gridWeeks = weeks.map(([weekKey, items], weekIndex) => {
     const filled = items.filter(({ row }) => assignmentHasChoirs(row, parseChoirList) || canEdit)
-    if (weekChoirGridReady(filled, parseChoirList) || (canEdit && filled.length > 0)) {
-      gridWeeks.push({ weekKey, items: filled, weekIndex })
-    } else {
-      filled.forEach((item) => fallbackRows.push(item.row))
-    }
-  })
+    return { weekKey, items: filled.length ? filled : items, weekIndex }
+  }).filter(({ items }) => items.length > 0 || canEdit)
 
   const patchAssignmentChoirs = (matchRow, nameIndex, edited) => {
     if (!onAssignmentsChange || !matchRow) return
@@ -290,18 +243,40 @@ export default function ChoirScheduleBulletin({
                     </th>
                   ))}
                   <th className="pmss-choir-th-sub pmss-choir-th--ss1">
-                    <BulletinEditable
-                      value={headers.ss1}
-                      onChange={canEdit ? (v) => setHeaders((h) => ({ ...h, ss1: v })) : undefined}
-                      disabled={!canEdit}
-                    />
+                    <div className="flex flex-col gap-0.5 items-center">
+                      <BulletinEditable
+                        value={headers.ss1}
+                        onChange={canEdit ? (v) => setHeaders((h) => ({ ...h, ss1: v })) : undefined}
+                        disabled={!canEdit}
+                      />
+                      <BulletinEditable
+                        value={dateOverrides[`${weekKey}-sunday1`] ?? cellDate(items, 'sunday1')}
+                        onChange={
+                          canEdit
+                            ? (v) => setDateOverrides((d) => ({ ...d, [`${weekKey}-sunday1`]: v }))
+                            : undefined
+                        }
+                        disabled={!canEdit}
+                      />
+                    </div>
                   </th>
                   <th className="pmss-choir-th-sub pmss-choir-th--ss2">
-                    <BulletinEditable
-                      value={headers.ss2}
-                      onChange={canEdit ? (v) => setHeaders((h) => ({ ...h, ss2: v })) : undefined}
-                      disabled={!canEdit}
-                    />
+                    <div className="flex flex-col gap-0.5 items-center">
+                      <BulletinEditable
+                        value={headers.ss2}
+                        onChange={canEdit ? (v) => setHeaders((h) => ({ ...h, ss2: v })) : undefined}
+                        disabled={!canEdit}
+                      />
+                      <BulletinEditable
+                        value={dateOverrides[`${weekKey}-sunday2`] ?? cellDate(items, 'sunday2')}
+                        onChange={
+                          canEdit
+                            ? (v) => setDateOverrides((d) => ({ ...d, [`${weekKey}-sunday2`]: v }))
+                            : undefined
+                        }
+                        disabled={!canEdit}
+                      />
+                    </div>
                   </th>
                 </tr>
               </thead>
@@ -323,19 +298,54 @@ export default function ChoirScheduleBulletin({
         )
       })}
 
-      {fallbackRows.length > 0 && (
-        <section className="pmss-choir-fallback-section">
-          {fallbackRows.map((row) => (
-            <ChoirServiceFallback
-              key={rowKey(row)}
-              row={row}
-              year={year}
-              canEdit={canEdit}
-              titleOverride={fallbackTitles[rowKey(row)]}
-              onTitleChange={(v) => setFallbackTitles((t) => ({ ...t, [rowKey(row)]: v }))}
-              onChoirChange={(i, v) => patchAssignmentChoirs(row, i, v)}
-            />
-          ))}
+      {otherRows.length > 0 && (
+        <section className="pmss-choir-week-section">
+          <div className="pmss-choir-week-banner">
+            <span>OTHER SERVICES</span>
+          </div>
+          <table className="pmss-choir-grid pmss-choir-grid--list">
+            <thead>
+              <tr>
+                <th className="pmss-choir-th">Service</th>
+                <th className="pmss-choir-th">Date</th>
+                <th className="pmss-choir-th">Choirs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {otherRows.map((row) => {
+                const names = parseChoirList(row.choirs)
+                const parts = parseBulletinDateParts(row.date, year)
+                return (
+                  <tr key={rowKey(row)}>
+                    <td className="pmss-choir-cell">
+                      <BulletinEditable
+                        value={fallbackTitles[rowKey(row)] ?? row.service}
+                        onChange={
+                          canEdit
+                            ? (v) => setFallbackTitles((t) => ({ ...t, [rowKey(row)]: v }))
+                            : undefined
+                        }
+                        disabled={!canEdit}
+                      />
+                    </td>
+                    <td className="pmss-choir-cell">{formatBulletinDateSlash(parts)}</td>
+                    <td className="pmss-choir-cell">
+                      {(names.length ? names : canEdit ? [''] : []).map((n, i) => (
+                        <div key={`${n}-${i}`} className="pmss-choir-cell-line">
+                          <BulletinEditable
+                            value={canEdit ? n : shortChoirDisplayName(n)}
+                            placeholder="Choir"
+                            onChange={canEdit ? (v) => patchAssignmentChoirs(row, i, v) : undefined}
+                            disabled={!canEdit}
+                          />
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </section>
       )}
 

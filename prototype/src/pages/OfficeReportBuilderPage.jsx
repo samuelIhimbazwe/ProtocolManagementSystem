@@ -28,8 +28,8 @@ export default function OfficeReportBuilderPage() {
   return (
     <div className="max-w-5xl mx-auto">
       <PageHeader
-        title="Office report builder"
-        description={`Include any section you can access as ${ROLE_LABELS[jurisdiction] ?? jurisdiction}, then preview, download, or submit to a leader.`}
+        title="Build reports"
+        description={`Include any section you can access in your jurisdiction (${ROLE_LABELS[jurisdiction] ?? jurisdiction}), then preview, download, or submit to a leader.`}
         actions={
           <Link to="/?view=office" className="text-sm font-medium text-primary-700">
             ← Back to Office
@@ -41,7 +41,6 @@ export default function OfficeReportBuilderPage() {
         roleId={roleId}
         officeKind={officeKind === 'leadership' ? 'leadership' : 'team_duty'}
         onToast={showToast}
-        fullPage
       />
 
       {toast && (

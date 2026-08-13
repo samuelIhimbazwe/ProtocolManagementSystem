@@ -1,14 +1,14 @@
 import { downloadBlob } from './choirScheduleExport'
 import { formatRwf } from './money'
 import { ROLE_LABELS } from './officeReportBuilder'
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
+import {
+  buildFormalReportHtml,
+  escapeHtml,
+  formatReportDay,
+  formatReportStamp,
+  makeReportReference,
+  normalizeSignatories,
+} from './reportDocument.js'
 
 function escapeCsvCell(value) {
   const s = String(value ?? '')
@@ -29,22 +29,11 @@ function kpiRows(obj) {
 }
 
 function formatDisplayDate(iso) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) {
-    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/)
-    if (m) return `${m[3]}/${m[2]}/${m[1]}`
-    return String(iso).slice(0, 16).replace('T', ' ')
-  }
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return formatReportStamp(iso)
 }
 
 function formatDay(iso) {
-  if (!iso) return '—'
-  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (m) return `${m[3]}/${m[2]}/${m[1]}`
-  return formatDisplayDate(iso).slice(0, 10)
+  return formatReportDay(iso)
 }
 
 function headerLabel(key) {
@@ -86,6 +75,7 @@ function buildSections({ title, subtitle, meta, include, narrative, snapshot }) 
     ['narrativeIssues', 'Issues & challenges', narrative?.issuesChallenges],
     ['narrativeSolutions', 'Solutions used', narrative?.solutions],
     ['narrativeRecs', 'Recommendations', narrative?.recommendations],
+    ['narrativeNotes', 'Notes', narrative?.notes],
   ]
   for (const [id, label, text] of narrativeMap) {
     if (included(include, id)) {
@@ -718,332 +708,47 @@ function renderSectionHtml(s, index) {
   ${total}`
 }
 
-/** Formal PMSS office report document HTML (preview + PDF/Excel). */
+/** Formal ADEPR Kacyiru office report document HTML (preview + PDF/Excel). */
 export function buildOfficeReportPreviewHtml(payload) {
   const sections = buildSections(payload).filter((s) => s.id !== 'cover')
   const title = payload.title || 'Office Report'
-  const subtitle = payload.subtitle || 'Office Report'
+  const subtitle = payload.subtitle || ''
   const meta = payload.meta ?? {}
   const generatedAt = meta.generatedAt ?? new Date().toISOString()
-  const generatedLabel = formatDisplayDate(generatedAt)
   const period = inferPeriod(payload)
   const reportType = reportTypeLabel(payload)
-  const reportId =
-    meta.reportId ||
-    `RPT-${new Date().getFullYear()}-${String(Math.abs(hashCode(title + generatedAt)) % 100000).padStart(5, '0')}`
-  const jurisdictionLabel = ROLE_LABELS[meta.jurisdiction] ?? meta.jurisdiction ?? 'Protocol Ministry'
-  const authorName = meta.authorName ?? '—'
-  const authorRole = (ROLE_LABELS[meta.authorRole] ?? meta.authorRole ?? 'OFFICE').toUpperCase()
-  const authorEmail = meta.authorEmail ?? ''
-  const recipientName = meta.recipientName ?? '—'
-  const recipientRole = (ROLE_LABELS[meta.recipientRole] ?? meta.recipientRole ?? 'LEADER').toUpperCase()
+  const reportId = meta.reportId || makeReportReference(title + generatedAt)
+  const jurisdictionLabel = ROLE_LABELS[meta.jurisdiction] ?? meta.jurisdiction ?? 'ADEPR Kacyiru'
   const sectionCount = sections.length
+  const body = [
+    subtitle ? `<p style="margin:-8px 0 18px;color:var(--muted)">${escapeHtml(subtitle)}</p>` : '',
+    sections.map((s, i) => renderSectionHtml(s, i)).join('\n'),
+  ].join('\n')
 
-  const body = sections.map((s, i) => renderSectionHtml(s, i)).join('\n')
+  const signatories = normalizeSignatories({
+    preparedByName: meta.preparedByName ?? '',
+    preparedByRole: meta.preparedByRole ?? '',
+    approvedByName: meta.approvedByName ?? '',
+    approvedByRole: meta.approvedByRole ?? '',
+  })
 
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<title>${escapeHtml(title)}</title>
-<style>
-  :root {
-    --ink: #14261c;
-    --green: #0f5c3a;
-    --green-dark: #0a3f28;
-    --muted: #5b6b62;
-    --line: #d7e0da;
-    --wash: #f4f7f5;
-    --ok-bg: #e7f5ec;
-    --ok-fg: #0f5c3a;
-    --warn-bg: #fff4e0;
-    --warn-fg: #9a6700;
-    --bad-bg: #fde8e8;
-    --bad-fg: #b42318;
-    --accent: #c27803;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    padding: 28px 32px 36px;
-    color: var(--ink);
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    font-size: 12px;
-    line-height: 1.4;
-    background: #fff;
-  }
-  .doc-header {
-    display: grid;
-    grid-template-columns: 1fr 2.2fr 1.2fr;
-    gap: 16px;
-    align-items: start;
-    margin-bottom: 18px;
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .brand-mark {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #0f5c3a, #1d7a52 45%, #c27803);
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 800;
-    font-size: 13px;
-    letter-spacing: 0.04em;
-  }
-  .brand-name {
-    font-size: 18px;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    color: var(--green-dark);
-  }
-  .brand-sub {
-    font-size: 10px;
-    color: var(--muted);
-    margin-top: 2px;
-  }
-  .titles { text-align: center; padding-top: 2px; }
-  .titles .product {
-    margin: 0;
-    font-size: 26px;
-    font-weight: 800;
-    color: var(--green);
-    letter-spacing: 0.04em;
-  }
-  .titles .doc-kind {
-    margin: 4px 0 0;
-    font-size: 15px;
-    font-weight: 600;
-    color: #1a1a1a;
-  }
-  .titles .place {
-    margin: 8px 0 0;
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .titles .type-line {
-    margin: 4px 0 0;
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .meta-right {
-    text-align: right;
-    font-size: 11px;
-    color: var(--muted);
-    line-height: 1.55;
-  }
-  .meta-right strong { color: var(--ink); font-weight: 600; }
-  .meta-right .rid { color: var(--accent); font-weight: 700; }
-  .summary {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0;
-    border-top: 3px solid var(--green);
-    background: var(--wash);
-    margin: 8px 0 22px;
-  }
-  .summary > div {
-    padding: 12px 14px;
-    border-right: 1px solid var(--line);
-  }
-  .summary > div:last-child { border-right: 0; }
-  .summary .lbl {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
-    margin-bottom: 4px;
-  }
-  .summary .val {
-    font-size: 15px;
-    font-weight: 800;
-    color: var(--green);
-  }
-  .section-title {
-    margin: 22px 0 10px;
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    color: #111;
-  }
-  .text-block {
-    background: var(--wash);
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 12px 14px;
-    white-space: pre-wrap;
-    line-height: 1.5;
-    margin-bottom: 8px;
-  }
-  .data-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 6px;
-  }
-  .data-table th {
-    background: var(--green);
-    color: #fff;
-    text-align: left;
-    padding: 8px 10px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-  }
-  .data-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--line);
-    vertical-align: top;
-  }
-  .data-table tbody tr:nth-child(even) td { background: #fafcfb; }
-  .badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-  }
-  .badge-ok { background: var(--ok-bg); color: var(--ok-fg); }
-  .badge-warn { background: var(--warn-bg); color: var(--warn-fg); }
-  .badge-bad { background: var(--bad-bg); color: var(--bad-fg); }
-  .section-total {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin: 6px 0 4px;
-    font-size: 12px;
-  }
-  .section-total strong {
-    font-size: 20px;
-    color: var(--green);
-    font-weight: 800;
-  }
-  .signoff {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 40px;
-    margin-top: 36px;
-    padding-top: 8px;
-  }
-  .signoff h3 {
-    margin: 0 0 18px;
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .sign-line {
-    border-bottom: 1px solid #222;
-    height: 28px;
-    margin-bottom: 10px;
-  }
-  .signoff .name { font-weight: 800; font-size: 13px; }
-  .signoff .role {
-    margin-top: 2px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--ink);
-  }
-  .signoff .when {
-    margin-top: 4px;
-    font-size: 11px;
-    color: var(--muted);
-  }
-  .doc-footer {
-    margin-top: 28px;
-    padding-top: 10px;
-    border-top: 1px solid var(--line);
-    font-size: 10px;
-    color: var(--muted);
-    line-height: 1.45;
-  }
-  @media print {
-    body { padding: 12px; }
-    .summary, .data-table th, .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  }
-</style>
-</head>
-<body>
-  <header class="doc-header">
-    <div class="brand">
-      <div class="brand-mark">PM</div>
-      <div>
-        <div class="brand-name">PMSS</div>
-        <div class="brand-sub">Protocol Ministry</div>
-      </div>
-    </div>
-    <div class="titles">
-      <p class="product">PMSS</p>
-      <p class="doc-kind">${escapeHtml(title)}</p>
-      <p class="place">${escapeHtml(jurisdictionLabel)} — ADEPR Kacyiru</p>
-      <p class="type-line">Type: ${escapeHtml(reportType)}</p>
-    </div>
-    <div class="meta-right">
-      <div>Reporting period: <strong>${escapeHtml(period)}</strong></div>
-      <div>Generated: <strong>${escapeHtml(generatedLabel)}</strong></div>
-      <div>Report ID: <span class="rid">${escapeHtml(reportId)}</span></div>
-    </div>
-  </header>
-
-  <div class="summary">
-    <div>
-      <div class="lbl">Report type</div>
-      <div class="val">${escapeHtml(reportType)}</div>
-    </div>
-    <div>
-      <div class="lbl">Period</div>
-      <div class="val" style="font-size:14px">${escapeHtml(period)}</div>
-    </div>
-    <div>
-      <div class="lbl">Sections included</div>
-      <div class="val">${escapeHtml(sectionCount)}</div>
-    </div>
-  </div>
-
-  ${subtitle ? `<p style="margin:-8px 0 18px;color:var(--muted)">${escapeHtml(subtitle)}</p>` : ''}
-
-  ${body || '<p style="color:var(--muted)"><em>No sections selected.</em></p>'}
-
-  <div class="signoff">
-    <div>
-      <h3>Prepared by</h3>
-      <div class="sign-line"></div>
-      <div class="name">${escapeHtml(authorName)}</div>
-      <div class="role">${escapeHtml(authorRole)}</div>
-      <div class="when">${escapeHtml(generatedLabel)}</div>
-    </div>
-    <div>
-      <h3>Approved by</h3>
-      <div class="sign-line"></div>
-      <div class="name">${escapeHtml(recipientName)}</div>
-      <div class="role">${escapeHtml(recipientRole)}</div>
-      <div class="when">Date: _______________</div>
-    </div>
-  </div>
-
-  <footer class="doc-footer">
-    Generated on: ${escapeHtml(generatedLabel)}
-    ${authorEmail ? ` | Generated by: ${escapeHtml(authorEmail)}` : ''}
-    | © ${new Date().getFullYear()} PMSS — Protocol Ministry Scheduling System, ADEPR Kacyiru. Confidential.
-  </footer>
-</body>
-</html>`
-}
-
-function hashCode(str) {
-  let h = 0
-  for (let i = 0; i < str.length; i += 1) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0
-  return h
+  return buildFormalReportHtml({
+    title,
+    productName: 'Time table Management System',
+    place: jurisdictionLabel,
+    reportType,
+    period,
+    generatedAt,
+    reportId,
+    summary: [
+      { label: 'Report type', value: reportType },
+      { label: 'Period', value: period },
+      { label: 'Sections included', value: String(sectionCount) },
+    ],
+    bodyHtml: body,
+    signatories,
+    footerExtra: meta.authorEmail ? `Contact: ${meta.authorEmail}` : '',
+  })
 }
 
 export async function downloadOfficeReportPdf(payload) {

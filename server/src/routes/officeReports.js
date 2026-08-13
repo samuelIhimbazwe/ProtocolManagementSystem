@@ -7,13 +7,14 @@ import {
   recipientRolesFor,
   resolveJurisdiction,
   ROLE_LABELS,
+  SUBMIT_RECIPIENT_ROLE_OPTIONS,
 } from '../lib/officeReportJurisdiction.js'
 import { getDraftPayload, getPublishedPayload } from '../lib/scheduleAccess.js'
 import { getActiveTeamLeadershipDuties, resolveOfficeAccess } from '../lib/officeAccess.js'
 
 const router = Router()
 
-const today = process.env.PMSS_TODAY ?? '2026-08-02'
+const today = (process.env.TMS_TODAY ?? process.env.PMSS_TODAY) ?? '2026-08-02'
 
 const LEADERSHIP = new Set([
   'president',
@@ -22,6 +23,89 @@ const LEADERSHIP = new Set([
   'treasurer',
   'coordinator',
 ])
+
+const APP_ROLE_SUBMIT_KEYS = new Set([
+  'coordinator',
+  'secretary',
+  'treasurer',
+  'vice_president',
+  'president',
+])
+
+async function scheduleTeamAssignments() {
+  const payload = (await getPublishedPayload()) ?? (await getDraftPayload())
+  return payload?.teamAssignments ?? []
+}
+
+async function recipientsForRoleKey(roleKey, { excludeUserId } = {}) {
+  const label = ROLE_LABELS[roleKey] ?? roleKey
+
+  if (roleKey === 'tl' || roleKey === 'vtl') {
+    const teams = await scheduleTeamAssignments()
+    const names = new Set()
+    for (const t of teams) {
+      const name = roleKey === 'tl' ? t.teamLeader : t.viceTeamLeader
+      if (name) names.add(String(name).trim())
+    }
+    if (!names.size) return []
+
+    const members = await db.prepare(`SELECT id, name FROM members`).all()
+    const byName = new Map(members.map((m) => [String(m.name).trim(), m.id]))
+    const out = []
+    const seen = new Set()
+    for (const name of names) {
+      const memberId = byName.get(name)
+      if (!memberId) continue
+      const user = await db
+        .prepare(
+          `SELECT id, display_name, app_role FROM users
+           WHERE member_id = ? AND status = 'Active'`,
+        )
+        .get(memberId)
+      if (!user || (excludeUserId && user.id === excludeUserId) || seen.has(user.id)) continue
+      seen.add(user.id)
+      out.push({
+        id: user.id,
+        displayName: user.display_name || name,
+        appRole: user.app_role,
+        roleKey,
+        roleLabel: label,
+      })
+    }
+    out.sort((a, b) => a.displayName.localeCompare(b.displayName))
+    return out
+  }
+
+  if (!APP_ROLE_SUBMIT_KEYS.has(roleKey)) return []
+
+  const rows = await db
+    .prepare(
+      `SELECT id, display_name, app_role FROM users
+       WHERE status = 'Active' AND app_role = ?
+       ORDER BY display_name`,
+    )
+    .all(roleKey)
+
+  return rows
+    .filter((u) => !excludeUserId || u.id !== excludeUserId)
+    .map((u) => ({
+      id: u.id,
+      displayName: u.display_name,
+      appRole: u.app_role,
+      roleKey,
+      roleLabel: label,
+    }))
+}
+
+async function buildSubmitRecipients(jurisdiction, authorUserId) {
+  const roles = recipientRolesFor(jurisdiction)
+  const recipients = []
+  for (const roleKey of roles) {
+    const list = await recipientsForRoleKey(roleKey, { excludeUserId: authorUserId })
+    recipients.push(...list)
+  }
+  return { roles, recipients }
+}
 
 function parseJson(raw, fallback) {
   if (raw == null || raw === '') return fallback
@@ -48,6 +132,7 @@ function mapReport(row) {
       issuesChallenges: '',
       solutions: '',
       recommendations: '',
+      notes: '',
     }),
     snapshot: parseJson(row.snapshot_json, null),
     recipientUserId: row.recipient_user_id,
@@ -785,29 +870,18 @@ router.get('/catalog', authMiddleware, async (req, res) => {
 
   const user = await actorProfile(req.auth.sub)
   const blocks = blocksForJurisdiction(jurisdiction)
-  const roles = recipientRolesFor(jurisdiction)
-  const placeholders = roles.map(() => '?').join(', ')
-  const recipients =
-    roles.length === 0
-      ? []
-      : (await db
-          .prepare(
-            `SELECT id, display_name, app_role FROM users
-             WHERE status = 'Active' AND app_role IN (${placeholders})
-             ORDER BY display_name`,
-          )
-          .all(...roles))
-          .map((u) => ({
-            id: u.id,
-            displayName: u.display_name,
-            appRole: u.app_role,
-            roleLabel: ROLE_LABELS[u.app_role] ?? u.app_role,
-          }))
+  const { roles, recipients } = await buildSubmitRecipients(jurisdiction, req.auth.sub)
+  const roleOptions = SUBMIT_RECIPIENT_ROLE_OPTIONS.filter((o) => roles.includes(o.id)).map((o) => ({
+    id: o.id,
+    label: o.label,
+    count: recipients.filter((r) => r.roleKey === o.id).length,
+  }))
 
   return res.json({
     jurisdiction,
     blocks,
     recipientRoles: roles,
+    recipientRoleOptions: roleOptions,
     recipients,
     authorName: user?.member_name || user?.display_name || null,
     authorRole: jurisdiction === 'team_duty' ? 'team_duty' : req.auth.role,
@@ -900,6 +974,7 @@ router.post('/', authMiddleware, async (req, res) => {
     issuesChallenges: String(narrativeIn.issuesChallenges ?? ''),
     solutions: String(narrativeIn.solutions ?? ''),
     recommendations: String(narrativeIn.recommendations ?? ''),
+    notes: String(narrativeIn.notes ?? ''),
   }
 
   const snapshot = b.snapshot != null ? b.snapshot : null
@@ -962,6 +1037,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
         n.recommendations != null
           ? String(n.recommendations)
           : parseJson(row.narrative_json, {}).recommendations ?? '',
+      notes: n.notes != null ? String(n.notes) : parseJson(row.narrative_json, {}).notes ?? '',
     })
   }
 
@@ -1002,23 +1078,29 @@ router.post('/:id/submit', authMiddleware, async (req, res) => {
   }
 
   const jurisdiction = row.jurisdiction
-  const allowedRecipients = recipientRolesFor(jurisdiction)
   const b = req.body ?? {}
   let recipientUserId = b.recipientUserId ?? b.recipient_user_id ?? null
   if (recipientUserId != null) recipientUserId = String(recipientUserId)
+  const recipientRoleKey = String(b.recipientRole ?? b.recipient_role ?? '').trim() || null
 
-  if (allowedRecipients.length === 0) {
+  const { roles: allowedRoles, recipients: allowedPeople } = await buildSubmitRecipients(
+    jurisdiction,
+    req.auth.sub,
+  )
+
+  if (allowedRoles.length === 0) {
     recipientUserId = recipientUserId || null
   } else {
     if (!recipientUserId) {
       return res.status(400).json({ error: 'recipientUserId required' })
     }
-    const recipient = await db.prepare(`SELECT id, app_role, status FROM users WHERE id = ?`).get(recipientUserId)
-    if (!recipient || recipient.status !== 'Active') {
-      return res.status(400).json({ error: 'Invalid recipient' })
-    }
-    if (!allowedRecipients.includes(recipient.app_role)) {
-      return res.status(400).json({ error: 'Recipient role is not allowed for this report type' })
+    const match = recipientRoleKey
+      ? allowedPeople.find((p) => p.id === recipientUserId && p.roleKey === recipientRoleKey)
+      : allowedPeople.find((p) => p.id === recipientUserId)
+    if (!match) {
+      return res.status(400).json({
+        error: 'Invalid recipient — choose someone with an allowed role (VTL, TL, or leadership)',
+      })
     }
   }
 
@@ -1035,6 +1117,7 @@ router.post('/:id/submit', authMiddleware, async (req, res) => {
     id: row.id,
     jurisdiction,
     recipientUserId,
+    recipientRole: recipientRoleKey,
   })
   const updated = await db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(row.id)
   return res.json({ report: mapReport(updated) })

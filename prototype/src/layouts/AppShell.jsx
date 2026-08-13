@@ -176,6 +176,7 @@ export default function AppShell() {
     location.pathname === '/activity' ||
     location.pathname === '/notifications' ||
     location.pathname === '/office-reports' ||
+    location.pathname.startsWith('/reports') ||
     location.pathname.startsWith('/finance') ||
     (location.pathname.startsWith('/members/') && permissions.nav.includes('/members')) ||
     (location.pathname === '/attendance/record' && canRecordAttendance(roleId, permissions)) ||
@@ -209,9 +210,9 @@ export default function AppShell() {
           </div>
           {!sidebarCollapsed && (
             <div className="min-w-0 flex-1">
-              <p className="pmss-brand-title text-sm font-semibold leading-tight text-white tracking-wide">PMSS</p>
+              <p className="pmss-brand-title text-sm font-semibold leading-tight text-white tracking-wide">TMS</p>
               <p className="pmss-brand-eyebrow text-[10px] text-white/55 leading-tight truncate">
-                Protocol Ministry
+                Time table Management
               </p>
             </div>
           )}
@@ -278,7 +279,7 @@ export default function AppShell() {
             <div className="pmss-brand-mark w-8 h-8 rounded-lg bg-primary-700 flex items-center justify-center text-white">
               <Church className="w-4 h-4" strokeWidth={2} />
             </div>
-            <span className="pmss-brand-title font-semibold text-sm text-neutral-900">PMSS</span>
+            <span className="pmss-brand-title font-semibold text-sm text-neutral-900">TMS</span>
           </div>
           {sidebarCollapsed && (
             <button
