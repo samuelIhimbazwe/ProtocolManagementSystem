@@ -17,12 +17,17 @@ import {
 
 export const SEED_PASSWORD = 'Password123!'
 
+/** Live coordinator login (override password with COORDINATOR_PASSWORD). */
+export const COORDINATOR_PASSWORD = process.env.COORDINATOR_PASSWORD || 'Kacyiru@2026'
+
 /** Bootstrap login so the app stays usable after demo people are removed. */
 export const BOOTSTRAP_COORDINATOR = {
-  username: 'coordinator',
-  email: 'coordinator@church.internal',
-  displayName: 'Coordinator',
+  username: 'i.wiclef',
+  email: 'i.wiclef@church.internal',
+  displayName: 'Iryayo Jean Wiclef',
 }
+
+const LEGACY_COORDINATOR_LOGINS = ['coordinator', 'coordinator@church.internal']
 
 /** Plain protocol member — never TL/VTL in the default August 2026 schedule. */
 export const REGULAR_MEMBER_DEMO = {
@@ -136,30 +141,69 @@ async function stripPeopleFromSchedules() {
   }
 }
 
+async function findBootstrapCoordinatorRow() {
+  const byUsername = await db
+    .prepare(`SELECT * FROM users WHERE username = ? COLLATE NOCASE`)
+    .get(BOOTSTRAP_COORDINATOR.username)
+  if (byUsername) return byUsername
+
+  const byEmail = await db
+    .prepare(`SELECT * FROM users WHERE email = ? COLLATE NOCASE`)
+    .get(BOOTSTRAP_COORDINATOR.email)
+  if (byEmail) return byEmail
+
+  for (const ident of LEGACY_COORDINATOR_LOGINS) {
+    const byLegacyUser = await db
+      .prepare(`SELECT * FROM users WHERE username = ? COLLATE NOCASE`)
+      .get(ident)
+    if (byLegacyUser) return byLegacyUser
+    const byLegacyEmail = await db
+      .prepare(`SELECT * FROM users WHERE email = ? COLLATE NOCASE`)
+      .get(ident)
+    if (byLegacyEmail) return byLegacyEmail
+  }
+
+  return db
+    .prepare(
+      `SELECT * FROM users WHERE app_role = 'coordinator' AND status != 'Deactivated' LIMIT 1`,
+    )
+    .get()
+}
+
+async function coordinatorMemberId() {
+  const row = await db
+    .prepare(
+      `SELECT id FROM members
+       WHERE LOWER(name) LIKE '%iryayo%'
+          OR LOWER(name) LIKE '%wiclef%'
+       LIMIT 1`,
+    )
+    .get()
+  return row?.id ?? null
+}
+
 export async function ensureBootstrapCoordinator() {
-  const hash = await bcrypt.hash(SEED_PASSWORD, 10)
-  const existing = await db
-    .prepare(`SELECT * FROM users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE`)
-    .get(BOOTSTRAP_COORDINATOR.username, BOOTSTRAP_COORDINATOR.email)
+  const hash = await bcrypt.hash(COORDINATOR_PASSWORD, 10)
+  const memberId = await coordinatorMemberId()
+  const existing = await findBootstrapCoordinatorRow()
 
   if (!existing) {
     await db
       .prepare(
         `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status)
-         VALUES (?, ?, ?, ?, NULL, ?, 'coordinator', 'Active')`,
+         VALUES (?, ?, ?, ?, ?, ?, 'coordinator', 'Active')`,
       )
       .run(
         uuid(),
         BOOTSTRAP_COORDINATOR.username,
         BOOTSTRAP_COORDINATOR.email,
         hash,
+        memberId,
         BOOTSTRAP_COORDINATOR.displayName,
       )
     console.log(
-      'Bootstrap coordinator: %s / %s (password %s)',
+      'Bootstrap coordinator: %s (password set)',
       BOOTSTRAP_COORDINATOR.username,
-      BOOTSTRAP_COORDINATOR.email,
-      SEED_PASSWORD,
     )
     return
   }
@@ -167,7 +211,7 @@ export async function ensureBootstrapCoordinator() {
   await db
     .prepare(
       `UPDATE users SET
-        username = ?, email = ?, password_hash = ?, member_id = NULL,
+        username = ?, email = ?, password_hash = ?, member_id = COALESCE(?, member_id),
         display_name = ?, app_role = 'coordinator', status = 'Active'
        WHERE id = ?`,
     )
@@ -175,6 +219,7 @@ export async function ensureBootstrapCoordinator() {
       BOOTSTRAP_COORDINATOR.username,
       BOOTSTRAP_COORDINATOR.email,
       hash,
+      memberId,
       BOOTSTRAP_COORDINATOR.displayName,
       existing.id,
     )

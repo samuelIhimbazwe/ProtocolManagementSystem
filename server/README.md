@@ -25,9 +25,9 @@ Default URL: `http://localhost:3001`
 
 After demo people are removed, use:
 
-| Email | Role | Password |
-|-------|------|----------|
-| `coordinator@church.internal` | Coordinator | `Password123!` |
+| Username | Role | Password |
+|----------|------|----------|
+| `i.wiclef` | Coordinator | `Kacyiru@2026` |
 
 Add real members in **Members**, then create their logins in **User accounts**.
 

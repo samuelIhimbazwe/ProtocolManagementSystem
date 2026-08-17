@@ -49,6 +49,7 @@ npm run seed -- --force
 | `SERVE_WEB` | `0` (API only; UI is on Vercel) |
 | `NODE_ENV` | `production` |
 | `TMS_TODAY` | Pilot date, e.g. `2026-08-02` (optional) |
+| `COORDINATOR_PASSWORD` | Coordinator login password (default `Kacyiru@2026`) |
 
 After deploy, open `https://<your-service>.onrender.com/health` — expect `{ "ok": true, "db": "postgres" }`.
 
@@ -102,7 +103,7 @@ npm run dev
 
 UI: http://localhost:5173 · API: http://localhost:3001
 
-Coordinator login: `coordinator@church.internal` / `Password123!`
+Coordinator login: **`i.wiclef`** / **`Kacyiru@2026`** (or `COORDINATOR_PASSWORD` if set on the API).
 
 ### Unified local production (API + UI one port)
 
@@ -130,6 +131,7 @@ Uses SQLite unless `DATABASE_URL` is set. Prototype `.env.production` uses `VITE
 | `CORS_ORIGIN` | Vercel origin(s) |
 | `SERVE_WEB` | `0` on Render; `1` for unified host |
 | `TMS_TODAY` | Pilot “today” for duty windows |
+| `COORDINATOR_PASSWORD` | Password for `i.wiclef` (default `Kacyiru@2026`) |
 | `NODE_ENV` | `production` / `development` |
 
 ### Web (Vite)
