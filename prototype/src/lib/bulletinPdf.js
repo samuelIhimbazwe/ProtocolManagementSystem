@@ -59,7 +59,29 @@ async function waitForImages(root) {
   )
 }
 
-function addCanvasPagesToPdf(pdf, canvas, { marginMm = 8 } = {}) {
+function addCanvasAsSinglePage(pdf, canvas, { marginMm = 6 } = {}) {
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  const pageHeight = pdf.internal.pageSize.getHeight()
+  const usableWidth = pageWidth - marginMm * 2
+  const usableHeight = pageHeight - marginMm * 2
+  const ratio = canvas.height / Math.max(canvas.width, 1)
+  let imgWidthMm = usableWidth
+  let imgHeightMm = imgWidthMm * ratio
+  if (imgHeightMm > usableHeight) {
+    imgHeightMm = usableHeight
+    imgWidthMm = imgHeightMm / ratio
+  }
+  const x = marginMm + (usableWidth - imgWidthMm) / 2
+  const y = marginMm
+  const pageData = canvas.toDataURL('image/jpeg', 0.92)
+  pdf.addImage(pageData, 'JPEG', x, y, imgWidthMm, imgHeightMm)
+}
+
+function addCanvasPagesToPdf(pdf, canvas, { marginMm = 8, singlePage = false } = {}) {
+  if (singlePage) {
+    addCanvasAsSinglePage(pdf, canvas, { marginMm })
+    return
+  }
   const pageWidth = pdf.internal.pageSize.getWidth()
   const pageHeight = pdf.internal.pageSize.getHeight()
   const usableWidth = pageWidth - marginMm * 2
@@ -154,7 +176,7 @@ export async function downloadBulletinPdf(elementId, { title = 'Bulletin', fileN
     left: '-12000px',
     top: '0',
     width: '794px',
-    padding: '16px',
+    padding: '6px',
     background: '#ffffff',
     zIndex: '-1',
     pointerEvents: 'none',
@@ -162,17 +184,31 @@ export async function downloadBulletinPdf(elementId, { title = 'Bulletin', fileN
 
   const style = document.createElement('style')
   style.textContent = `
-    .pmss-bulletin-week-row {
+    .pmss-bulletin-week-row,
+    .pmss-bulletin-service-row {
       display: grid !important;
       grid-template-columns: 1fr 1fr !important;
     }
-    .pmss-bulletin-week-col + .pmss-bulletin-week-col {
+    .pmss-bulletin-week-col + .pmss-bulletin-week-col,
+    .pmss-bulletin-service-cell + .pmss-bulletin-service-cell {
       border-top: none !important;
       border-left: 1px solid #333 !important;
     }
-    .pmss-bulletin-week-col--blank { display: block !important; min-height: 2rem; }
+    .pmss-bulletin-week-col--blank,
+    .pmss-bulletin-service-cell--blank { display: none !important; }
     .pmss-bulletin-week-col--empty { display: none !important; }
     .pmss-no-print { display: none !important; }
+    .pmss-bulletin-member-list { list-style: none !important; padding-left: 0 !important; margin: 0 !important; font-size: 8px !important; line-height: 1.12 !important; }
+    .pmss-bulletin-member-list > li { display: flex !important; align-items: baseline !important; gap: 0.25em !important; padding: 0 !important; }
+    .pmss-bulletin-member-index { flex: 0 0 1.05rem !important; text-align: right !important; line-height: inherit !important; }
+    .pmss-bulletin-logo-img { height: 2.1rem !important; }
+    .pmss-bulletin-masthead { padding-bottom: 4px !important; margin-bottom: 4px !important; }
+    .pmss-bulletin-church-line { font-size: 10px !important; margin-top: 1px !important; }
+    .pmss-bulletin-main-title { font-size: 11px !important; margin-top: 2px !important; }
+    .pmss-bulletin-service-cell { padding: 3px 5px 4px !important; }
+    .pmss-bulletin-service-block { margin-bottom: 0 !important; }
+    .pmss-bulletin-service-bar { font-size: 8px !important; padding: 2px 4px !important; margin-bottom: 1px !important; }
+    .pmss-bulletin-signatures { font-size: 7.5px !important; margin-top: 4px !important; padding: 4px 6px !important; }
   `
   const clone = prepareBulletinClone(el)
   host.appendChild(style)
@@ -197,7 +233,7 @@ export async function downloadBulletinPdf(elementId, { title = 'Bulletin', fileN
     })
 
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    addCanvasPagesToPdf(pdf, canvas, { marginMm: 8 })
+    addCanvasPagesToPdf(pdf, canvas, { marginMm: 6, singlePage: true })
     const name = fileName ?? `pmss-${slugify(title)}.pdf`
     pdf.save(name)
     return { fileName: name }

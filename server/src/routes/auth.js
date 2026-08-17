@@ -25,7 +25,7 @@ router.post('/login', async (req, res) => {
   const identifier = String(req.body?.email ?? req.body?.username ?? '').trim()
   const { password } = req.body ?? {}
   if (!identifier || !password) {
-    return res.status(400).json({ error: 'Email and password required' })
+    return res.status(400).json({ error: 'Username and password required' })
   }
 
   let user = await db

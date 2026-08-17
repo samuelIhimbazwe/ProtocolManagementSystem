@@ -215,6 +215,10 @@ const SQLITE_SCHEMA = `
       status TEXT NOT NULL DEFAULT 'Active',
       attendance_rate INTEGER,
       choir TEXT,
+      availability TEXT NOT NULL DEFAULT 'available',
+      availability_note TEXT,
+      availability_updated_at TEXT,
+      serve_days TEXT NOT NULL DEFAULT 'all',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -418,6 +422,10 @@ const PG_SCHEMA = `
       status TEXT NOT NULL DEFAULT 'Active',
       attendance_rate INTEGER,
       choir TEXT,
+      availability TEXT NOT NULL DEFAULT 'available',
+      availability_note TEXT,
+      availability_updated_at TEXT,
+      serve_days TEXT NOT NULL DEFAULT 'all',
       created_at TEXT NOT NULL DEFAULT (${PG_NOW}),
       updated_at TEXT NOT NULL DEFAULT (${PG_NOW})
     );
@@ -577,6 +585,10 @@ export async function initSchema() {
   await ensureColumn('schedule_versions', 'is_public', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn('members', 'email', 'TEXT')
+  await ensureColumn('members', 'availability', "TEXT NOT NULL DEFAULT 'available'")
+  await ensureColumn('members', 'availability_note', 'TEXT')
+  await ensureColumn('members', 'availability_updated_at', 'TEXT')
+  await ensureColumn('members', 'serve_days', "TEXT NOT NULL DEFAULT 'all'")
   await ensureColumn('service_reports', 'recipient_user_id', 'TEXT')
   await ensureColumn('service_reports', 'recipient_role', 'TEXT')
   await migrateScheduleDraftIndex()

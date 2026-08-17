@@ -19,21 +19,17 @@ Default URL: `http://localhost:3001`
 
 **Postgres (Neon):** set `DATABASE_URL` in `.env`. Schema is created on startup.
 
-**Reseed (wipes pilot data):** `npm run seed -- --force` — creates draft + **published V1** so members can read the schedule immediately.
+**Reseed demo people (optional):** `SEED_DEMO=1 npm run seed -- --force --demo`
 
-## Seeded logins (demo)
+## Login (empty roster)
 
-Password for all: **`Password123!`**
+After demo people are removed, use:
 
-| Username | Role |
-|----------|------|
-| `s.niyonzima` | President |
-| `e.habimana` | Vice President |
-| `a.mukamana` | Secretary |
-| `j.uwimana` | Treasurer |
-| `d.mugisha` | Coordinator |
-| `j.ndayisaba` | Member |
-| `t.hakizimana` | Member (regular — never TL/VTL) |
+| Email | Role | Password |
+|-------|------|----------|
+| `coordinator@church.internal` | Coordinator | `Password123!` |
+
+Add real members in **Members**, then create their logins in **User accounts**.
 
 ## Endpoints
 

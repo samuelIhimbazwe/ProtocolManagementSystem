@@ -10,16 +10,23 @@ import { useMembers } from '../context/MembersContext'
 import { USE_API } from '../api/config'
 import { createMember, fetchMembers, importMembers } from '../api/schedule'
 import { apiDownload } from '../api/client'
+import {
+  AVAILABILITY_OPTIONS,
+  availabilityBadgeVariant,
+  availabilityLabel,
+  serveDaysLabel,
+} from '../lib/memberAvailability'
 
 const CHOIR_OPTIONS = ['', ...CHOIRS.primary, ...CHOIRS.secondary, ...CHOIRS.special]
 
 const ROLE_FILTERS = ['', 'Member', 'President', 'Vice President', 'Secretary', 'Treasurer', 'Coordinator']
 const STATUS_FILTERS = ['', 'Active', 'Inactive']
+const AVAILABILITY_FILTERS = ['', ...AVAILABILITY_OPTIONS.map((o) => o.id)]
 
 const IMPORT_TEMPLATE = [
-  'name,email,phone,role,status,choir',
-  '"Jane Doe","jane.doe@example.com","+250 780000000","Member","Active",""',
-  '"John Example","john.example@example.com","+250 781111111","Member","Active","Zion Choir"',
+  'name,email,phone,role,status,choir,availability,availability_note,serve_days',
+  '"Jane Doe","jane.doe@example.com","+250 780000000","Member","Active","","available","","all"',
+  '"John Example","john.example@example.com","+250 781111111","Member","Active","Zion Choir","sick","Flu","tuesday"',
 ].join('\n')
 
 function downloadTemplate() {
@@ -75,6 +82,9 @@ function parseCsvPreview(text) {
         role: obj.role || 'Member',
         status: obj.status || 'Active',
         choir: obj.choir || '',
+        availability: obj.availability || 'available',
+        availabilityNote: obj.availability_note || obj.availabilityNote || '',
+        serveDays: obj.serve_days || obj.serveDays || 'all',
         id: obj.id || '',
       }
     })
@@ -87,9 +97,15 @@ function buildColumns() {
       key: 'name',
       label: 'Name',
       render: (r) => (
-        <Link to={`/members/${r.id}`} className="font-medium text-primary-700 hover:underline">
-          {r.name}
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link to={`/members/${r.id}`} className="font-medium text-primary-700 hover:underline">
+            {r.name}
+            {r.choir ? (
+              <span className="font-normal text-neutral-500"> — {r.choir.replace(/ Choir$/i, '')}</span>
+            ) : null}
+          </Link>
+          {r.serveDays === 'tuesday' ? <Badge variant="primary">Tue only</Badge> : null}
+        </div>
       ),
     },
     { key: 'phone', label: 'Phone' },
@@ -103,6 +119,18 @@ function buildColumns() {
       key: 'status',
       label: 'Status',
       render: (r) => <Badge variant={r.status === 'Active' ? 'success' : 'neutral'}>{r.status}</Badge>,
+    },
+    {
+      key: 'availability',
+      label: 'Availability',
+      render: (r) => {
+        const id = r.availability || 'available'
+        return (
+          <span title={r.availabilityNote || undefined}>
+            <Badge variant={availabilityBadgeVariant(id)}>{availabilityLabel(id)}</Badge>
+          </span>
+        )
+      },
     },
     {
       key: 'attendanceRate',
@@ -141,6 +169,7 @@ export default function MembersPage() {
   const [filterChoir, setFilterChoir] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterRole, setFilterRole] = useState('')
+  const [filterAvailability, setFilterAvailability] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [importCsv, setImportCsv] = useState('')
@@ -191,22 +220,24 @@ export default function MembersPage() {
     load()
   }, [])
 
-  const activeFilterCount = [filterChoir, filterStatus, filterRole].filter(Boolean).length
+  const activeFilterCount = [filterChoir, filterStatus, filterRole, filterAvailability].filter(Boolean).length
 
   const clearFilters = () => {
     setFilterChoir('')
     setFilterStatus('')
     setFilterRole('')
+    setFilterAvailability('')
   }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return rows.filter((m) => {
       if (q) {
-        const hay = `${m.name} ${m.phone ?? ''} ${m.email ?? ''} ${m.role ?? ''} ${m.choir ?? ''}`.toLowerCase()
+        const hay = `${m.name} ${m.phone ?? ''} ${m.email ?? ''} ${m.role ?? ''} ${m.choir ?? ''} ${availabilityLabel(m.availability)} ${m.availabilityNote ?? ''} ${serveDaysLabel(m.serveDays)}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       if (filterStatus && m.status !== filterStatus) return false
+      if (filterAvailability && (m.availability || 'available') !== filterAvailability) return false
       if (filterRole && m.role !== filterRole) return false
       if (filterChoir === '__none__') {
         if (m.choir) return false
@@ -215,7 +246,7 @@ export default function MembersPage() {
       }
       return true
     })
-  }, [rows, search, filterChoir, filterStatus, filterRole])
+  }, [rows, search, filterChoir, filterStatus, filterRole, filterAvailability])
 
   const submitAdd = async () => {
     if (!newName.trim()) return
@@ -368,13 +399,27 @@ export default function MembersPage() {
       </div>
 
       {filtersOpen && (
-        <div className="pmss-card p-4 mb-4 grid sm:grid-cols-3 gap-3">
+        <div className="pmss-card p-4 mb-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-semibold text-neutral-500 mb-1.5">Status</label>
             <select className="pmss-input" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
               {STATUS_FILTERS.map((s) => (
                 <option key={s || 'all'} value={s}>
                   {s || 'All statuses'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-neutral-500 mb-1.5">Availability</label>
+            <select
+              className="pmss-input"
+              value={filterAvailability}
+              onChange={(e) => setFilterAvailability(e.target.value)}
+            >
+              {AVAILABILITY_FILTERS.map((s) => (
+                <option key={s || 'all'} value={s}>
+                  {s ? availabilityLabel(s) : 'All availability'}
                 </option>
               ))}
             </select>

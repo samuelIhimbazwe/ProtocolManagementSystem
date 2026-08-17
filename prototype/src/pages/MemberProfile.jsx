@@ -9,6 +9,14 @@ import { USE_API } from '../api/config'
 import { fetchUserAccounts } from '../api/client'
 import { fetchMember, updateMember } from '../api/schedule'
 import { useRole } from '../context/RoleContext'
+import { useMembers } from '../context/MembersContext'
+import {
+  AVAILABILITY_OPTIONS,
+  SERVE_DAYS_OPTIONS,
+  availabilityBadgeVariant,
+  availabilityLabel,
+  serveDaysLabel,
+} from '../lib/memberAvailability'
 
 const CHOIR_OPTIONS = ['', ...CHOIRS.primary, ...CHOIRS.secondary, ...CHOIRS.special]
 
@@ -33,11 +41,21 @@ function Field({ label, value }) {
 export default function MemberProfilePage() {
   const { id } = useParams()
   const { permissions } = useRole()
+  const { refresh: refreshMembers } = useMembers()
   const [member, setMember] = useState(null)
   const [linkedAccount, setLinkedAccount] = useState(null)
   const [loading, setLoading] = useState(USE_API)
   const [editOpen, setEditOpen] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', phone: '', choir: '', status: 'Active' })
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    choir: '',
+    status: 'Active',
+    availability: 'available',
+    availabilityNote: '',
+    serveDays: 'all',
+  })
   const [toast, setToast] = useState(null)
   const [saving, setSaving] = useState(false)
 
@@ -81,6 +99,9 @@ export default function MemberProfilePage() {
       phone: member.phone ?? '',
       choir: member.choir ?? '',
       status: member.status ?? 'Active',
+      availability: member.availability ?? 'available',
+      availabilityNote: member.availabilityNote ?? '',
+      serveDays: member.serveDays ?? 'all',
     })
     setEditOpen(true)
   }
@@ -98,10 +119,14 @@ export default function MemberProfilePage() {
         phone: form.phone.trim() || null,
         choir: form.choir.trim() || null,
         status: form.status,
+        availability: form.availability,
+        availabilityNote: form.availability === 'available' ? null : form.availabilityNote.trim() || null,
+        serveDays: form.serveDays,
       }
       if (USE_API) {
         const { member: updated } = await updateMember(id, body)
         setMember(updated)
+        refreshMembers()
       } else {
         setMember((prev) => ({ ...prev, ...body }))
       }
@@ -141,6 +166,10 @@ export default function MemberProfilePage() {
         actions={
           <>
             <Badge variant={member.status === 'Active' ? 'success' : 'neutral'}>{member.status}</Badge>
+            <Badge variant={availabilityBadgeVariant(member.availability)}>
+              {availabilityLabel(member.availability)}
+            </Badge>
+            {member.serveDays === 'tuesday' ? <Badge variant="primary">Tuesday only</Badge> : null}
             {permissions.manageMembers ? (
               <button type="button" className="pmss-btn-secondary" onClick={openEdit}>
                 Edit
@@ -173,6 +202,21 @@ export default function MemberProfilePage() {
             <Field
               label="Attendance rate"
               value={member.attendanceRate != null ? `${member.attendanceRate}%` : '—'}
+            />
+          </div>
+        </Section>
+        <Section title="Duty availability">
+          <div className="grid gap-4">
+            <Field label="Availability" value={availabilityLabel(member.availability)} />
+            <Field label="Serve days" value={serveDaysLabel(member.serveDays)} />
+            <Field label="Note" value={member.availabilityNote || '—'} />
+            <Field
+              label="Last updated"
+              value={
+                member.availabilityUpdatedAt
+                  ? String(member.availabilityUpdatedAt).replace('T', ' ').slice(0, 16)
+                  : '—'
+              }
             />
           </div>
         </Section>
@@ -234,7 +278,7 @@ export default function MemberProfilePage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">Status</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">Roster status</label>
             <select
               className="pmss-input"
               value={form.status}
@@ -244,6 +288,51 @@ export default function MemberProfilePage() {
               <option value="Inactive">Inactive</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">Duty availability</label>
+            <select
+              className="pmss-input"
+              value={form.availability}
+              onChange={(e) => setForm((f) => ({ ...f, availability: e.target.value }))}
+            >
+              {AVAILABILITY_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-neutral-500 mt-1">
+              {AVAILABILITY_OPTIONS.find((o) => o.id === form.availability)?.description}
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">Serve days</label>
+            <select
+              className="pmss-input"
+              value={form.serveDays}
+              onChange={(e) => setForm((f) => ({ ...f, serveDays: e.target.value }))}
+            >
+              {SERVE_DAYS_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-neutral-500 mt-1">
+              {SERVE_DAYS_OPTIONS.find((o) => o.id === form.serveDays)?.description}
+            </p>
+          </div>
+          {form.availability !== 'available' && (
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1.5">Availability note</label>
+              <input
+                className="pmss-input"
+                value={form.availabilityNote}
+                onChange={(e) => setForm((f) => ({ ...f, availabilityNote: e.target.value }))}
+                placeholder="e.g. Flu, due date, travel…"
+              />
+            </div>
+          )}
         </div>
       </Modal>
 

@@ -1,6 +1,12 @@
 import { Router } from 'express'
 import { db, audit } from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
+import {
+  DEFAULT_AVAILABILITY,
+  DEFAULT_SERVE_DAYS,
+  normalizeAvailability,
+  normalizeServeDays,
+} from '../lib/memberAvailability.js'
 
 const router = Router()
 
@@ -14,6 +20,10 @@ function mapMember(row) {
     status: row.status,
     attendanceRate: row.attendance_rate,
     choir: row.choir,
+    availability: row.availability ?? DEFAULT_AVAILABILITY,
+    availabilityNote: row.availability_note ?? '',
+    availabilityUpdatedAt: row.availability_updated_at ?? null,
+    serveDays: row.serve_days ?? DEFAULT_SERVE_DAYS,
   }
 }
 
@@ -130,11 +140,16 @@ function normalizeImportRow(raw) {
   const roleRaw = String(raw.role ?? 'Member').trim() || 'Member'
   const statusRaw = String(raw.status ?? 'Active').trim() || 'Active'
   const choirRaw = String(raw.choir ?? '').trim()
+  const availabilityRaw = String(raw.availability ?? raw.duty_availability ?? DEFAULT_AVAILABILITY).trim()
+  const availabilityNote = String(raw.availability_note ?? raw.note ?? '').trim()
+  const serveDaysRaw = String(raw.serve_days ?? raw.serveDays ?? DEFAULT_SERVE_DAYS).trim()
   const id = String(raw.id ?? '').trim()
   const role =
     [...ALLOWED_ROLES].find((r) => r.toLowerCase() === roleRaw.toLowerCase()) ?? null
   const status =
     [...ALLOWED_STATUSES].find((s) => s.toLowerCase() === statusRaw.toLowerCase()) ?? null
+  const availability = normalizeAvailability(availabilityRaw)
+  const serveDays = normalizeServeDays(serveDaysRaw)
   return {
     id: id || null,
     name,
@@ -144,8 +159,13 @@ function normalizeImportRow(raw) {
     status,
     choir:
       !choirRaw || choirRaw.toLowerCase() === 'none' ? null : choirRaw,
+    availability,
+    availabilityNote: availabilityNote || null,
+    serveDays,
     roleRaw,
     statusRaw,
+    availabilityRaw,
+    serveDaysRaw,
   }
 }
 
@@ -154,9 +174,9 @@ router.get('/export/csv', authMiddleware, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden' })
   }
   const rows = await db.prepare(`SELECT * FROM members ORDER BY name`).all()
-  const header = 'id,name,email,phone,role,status,choir,attendance_rate'
+  const header = 'id,name,email,phone,role,status,choir,attendance_rate,availability,availability_note,serve_days'
   const lines = rows.map((r) =>
-    [r.id, r.name, r.email ?? '', r.phone ?? '', r.role, r.status, r.choir ?? '', r.attendance_rate ?? '']
+    [r.id, r.name, r.email ?? '', r.phone ?? '', r.role, r.status, r.choir ?? '', r.attendance_rate ?? '', r.availability ?? 'available', r.availability_note ?? '', r.serve_days ?? 'all']
       .map((c) => `"${String(c).replace(/"/g, '""')}"`)
       .join(','),
   )
@@ -170,9 +190,9 @@ router.get('/import/template', authMiddleware, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden' })
   }
   const csv = [
-    'name,email,phone,role,status,choir',
-    '"Jane Doe","jane.doe@example.com","+250 780000000","Member","Active",""',
-    '"John Example","john.example@example.com","+250 781111111","Member","Active","Zion Choir"',
+    'name,email,phone,role,status,choir,availability,availability_note,serve_days',
+    '"Jane Doe","jane.doe@example.com","+250 780000000","Member","Active","","available","","all"',
+    '"John Example","john.example@example.com","+250 781111111","Member","Active","Zion Choir","sick","Flu","tuesday"',
   ].join('\n')
   res.setHeader('Content-Type', 'text/csv')
   res.setHeader('Content-Disposition', 'attachment; filename="pmss-members-import-template.csv"')
@@ -226,6 +246,22 @@ router.post('/import', authMiddleware, async (req, res) => {
       })
       continue
     }
+    if (!parsed.availability) {
+      result.errors.push({
+        row: rowNum,
+        name: parsed.name,
+        error: `Invalid availability: ${parsed.availabilityRaw}`,
+      })
+      continue
+    }
+    if (!parsed.serveDays) {
+      result.errors.push({
+        row: rowNum,
+        name: parsed.name,
+        error: `Invalid serve days: ${parsed.serveDaysRaw}`,
+      })
+      continue
+    }
     if (parsed.email === '__invalid__') {
       result.errors.push({ row: rowNum, name: parsed.name, error: 'Invalid email' })
       continue
@@ -240,7 +276,10 @@ router.post('/import', authMiddleware, async (req, res) => {
         await db
           .prepare(
             `UPDATE members SET
-              name = ?, email = ?, phone = ?, role = ?, status = ?, choir = ?, updated_at = datetime('now')
+              name = ?, email = ?, phone = ?, role = ?, status = ?, choir = ?,
+              availability = ?, availability_note = ?, availability_updated_at = datetime('now'),
+              serve_days = ?,
+              updated_at = datetime('now')
              WHERE id = ?`,
           )
           .run(
@@ -250,6 +289,9 @@ router.post('/import', authMiddleware, async (req, res) => {
             parsed.role,
             parsed.status,
             parsed.choir,
+            parsed.availability,
+            parsed.availabilityNote,
+            parsed.serveDays,
             matchById.id,
           )
         const updated = await db.prepare(`SELECT * FROM members WHERE id = ?`).get(matchById.id)
@@ -272,10 +314,21 @@ router.post('/import', authMiddleware, async (req, res) => {
         const id = String(nextId)
         await db
           .prepare(
-            `INSERT INTO members (id, name, email, phone, role, status, attendance_rate, choir)
-             VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
+            `INSERT INTO members (id, name, email, phone, role, status, attendance_rate, choir, availability, availability_note, availability_updated_at, serve_days)
+             VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, datetime('now'), ?)`,
           )
-          .run(id, parsed.name, parsed.email, parsed.phone, parsed.role, parsed.status, parsed.choir)
+          .run(
+            id,
+            parsed.name,
+            parsed.email,
+            parsed.phone,
+            parsed.role,
+            parsed.status,
+            parsed.choir,
+            parsed.availability,
+            parsed.availabilityNote,
+            parsed.serveDays,
+          )
         const created = await db.prepare(`SELECT * FROM members WHERE id = ?`).get(id)
         byId.set(id, created)
         byNamePhone.set(key, created)
@@ -307,10 +360,14 @@ router.post('/', authMiddleware, async (req, res) => {
   if (!WRITE_ROLES.has(req.auth.role)) {
     return res.status(403).json({ error: 'Forbidden' })
   }
-  const { name, phone, email, role, choir, status } = req.body ?? {}
+  const { name, phone, email, role, choir, status, availability, availabilityNote, serveDays } = req.body ?? {}
   if (!name || !role) return res.status(400).json({ error: 'name and role required' })
   const emailValue = normalizeEmail(email)
   if (emailValue === undefined) return res.status(400).json({ error: 'Invalid email' })
+  const availabilityValue = availability ? normalizeAvailability(availability) : DEFAULT_AVAILABILITY
+  if (!availabilityValue) return res.status(400).json({ error: 'Invalid availability' })
+  const serveDaysValue = serveDays ? normalizeServeDays(serveDays) : DEFAULT_SERVE_DAYS
+  if (!serveDaysValue) return res.status(400).json({ error: 'Invalid serve days' })
 
   const maxId = (await db.prepare(`SELECT MAX(CAST(id AS INTEGER)) AS m FROM members`).get()).m ?? 0
   const id = String(maxId + 1)
@@ -318,10 +375,24 @@ router.post('/', authMiddleware, async (req, res) => {
     choir == null || String(choir).trim() === '' || String(choir).toLowerCase() === 'none'
       ? null
       : String(choir).trim()
+  const noteValue = availabilityNote == null || String(availabilityNote).trim() === ''
+    ? null
+    : String(availabilityNote).trim()
   await db.prepare(
-    `INSERT INTO members (id, name, email, phone, role, status, attendance_rate, choir)
-     VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
-  ).run(id, String(name).trim(), emailValue, phone ?? null, role, status ?? 'Active', choirValue)
+    `INSERT INTO members (id, name, email, phone, role, status, attendance_rate, choir, availability, availability_note, availability_updated_at, serve_days)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, datetime('now'), ?)`,
+  ).run(
+    id,
+    String(name).trim(),
+    emailValue,
+    phone ?? null,
+    role,
+    status ?? 'Active',
+    choirValue,
+    availabilityValue,
+    noteValue,
+    serveDaysValue,
+  )
   await audit('members.create', req.auth.sub, { memberId: id })
   const row = await db.prepare(`SELECT * FROM members WHERE id = ?`).get(id)
   return res.status(201).json({ member: mapMember(row) })
@@ -334,11 +405,14 @@ router.patch('/:id', authMiddleware, async (req, res) => {
   const row = await db.prepare(`SELECT * FROM members WHERE id = ?`).get(req.params.id)
   if (!row) return res.status(404).json({ error: 'Member not found' })
 
-  const { name, phone, email, role, choir, status } = req.body ?? {}
+  const { name, phone, email, role, choir, status, availability, availabilityNote, serveDays } = req.body ?? {}
   const body = req.body ?? {}
   const choirProvided = Object.prototype.hasOwnProperty.call(body, 'choir')
   const phoneProvided = Object.prototype.hasOwnProperty.call(body, 'phone')
   const emailProvided = Object.prototype.hasOwnProperty.call(body, 'email')
+  const availabilityProvided = Object.prototype.hasOwnProperty.call(body, 'availability')
+  const noteProvided = Object.prototype.hasOwnProperty.call(body, 'availabilityNote')
+  const serveDaysProvided = Object.prototype.hasOwnProperty.call(body, 'serveDays')
   const choirValue = !choirProvided
     ? null
     : choir == null || String(choir).trim() === '' || String(choir).toLowerCase() === 'none'
@@ -354,6 +428,21 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     emailValue = normalizeEmail(email)
     if (emailValue === undefined) return res.status(400).json({ error: 'Invalid email' })
   }
+  let availabilityValue = null
+  if (availabilityProvided) {
+    availabilityValue = normalizeAvailability(availability)
+    if (!availabilityValue) return res.status(400).json({ error: 'Invalid availability' })
+  }
+  let serveDaysValue = null
+  if (serveDaysProvided) {
+    serveDaysValue = normalizeServeDays(serveDays)
+    if (!serveDaysValue) return res.status(400).json({ error: 'Invalid serve days' })
+  }
+  const noteValue = !noteProvided
+    ? null
+    : availabilityNote == null || String(availabilityNote).trim() === ''
+      ? null
+      : String(availabilityNote).trim()
 
   await db.prepare(
     `UPDATE members SET
@@ -363,6 +452,10 @@ router.patch('/:id', authMiddleware, async (req, res) => {
       role = COALESCE(?, role),
       choir = CASE WHEN ? = 1 THEN ? ELSE choir END,
       status = COALESCE(?, status),
+      availability = CASE WHEN ? = 1 THEN ? ELSE availability END,
+      availability_note = CASE WHEN ? = 1 THEN ? ELSE availability_note END,
+      availability_updated_at = CASE WHEN ? = 1 OR ? = 1 THEN datetime('now') ELSE availability_updated_at END,
+      serve_days = CASE WHEN ? = 1 THEN ? ELSE serve_days END,
       updated_at = datetime('now')
      WHERE id = ?`,
   ).run(
@@ -375,6 +468,14 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     choirProvided ? 1 : 0,
     choirValue,
     status ?? null,
+    availabilityProvided ? 1 : 0,
+    availabilityValue,
+    noteProvided ? 1 : 0,
+    noteValue,
+    availabilityProvided ? 1 : 0,
+    noteProvided ? 1 : 0,
+    serveDaysProvided ? 1 : 0,
+    serveDaysValue,
     req.params.id,
   )
   await audit('members.update', req.auth.sub, { memberId: req.params.id })

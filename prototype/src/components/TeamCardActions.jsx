@@ -45,6 +45,12 @@ export function normalizeTeam(team) {
   }
 }
 
+export function dropUnavailableFromTeam(team, allowedNames) {
+  const allowed = allowedNames instanceof Set ? allowedNames : new Set(allowedNames ?? [])
+  const members = (team.members ?? []).filter((n) => allowed.has(n))
+  return normalizeTeam({ ...team, members })
+}
+
 export function shuffleCopy(arr) {
   const a = [...arr]
   for (let i = a.length - 1; i > 0; i -= 1) {

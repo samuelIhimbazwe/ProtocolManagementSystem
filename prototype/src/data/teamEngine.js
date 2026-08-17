@@ -1,4 +1,5 @@
 import { normalizeTeam, shuffleCopy, TEAM_LIMITS } from '../components/TeamCardActions'
+import { canServeTeamKind } from '../lib/memberAvailability'
 
 /** Sunday, Tuesday, and Igaburo use a full roster of 10 (TL + VTL included). */
 export const FULL_ROSTER_TEAM_SIZE = 10
@@ -105,6 +106,29 @@ function teamFromMembers(members, kind) {
   })
 }
 
+function eligiblePool(pool, kind, serveDaysByName) {
+  if (!serveDaysByName) return pool
+  return pool.filter((name) => canServeTeamKind(serveDaysByName[name], kind))
+}
+
+function pickForKind(pool, kind, size, startOffset, exclude, serveDaysByName, tuesdayIndex, tuesdaySlotCount) {
+  const eligible = eligiblePool(pool, kind, serveDaysByName)
+  if (eligible.length < size) {
+    throw new Error(`Not enough protocol members for ${kind} teams`)
+  }
+  const guaranteed = []
+  if (kind === 'tuesday' && serveDaysByName && tuesdaySlotCount > 0) {
+    const tueOnly = eligible.filter((n) => (serveDaysByName[n] || 'all') === 'tuesday')
+    tueOnly.forEach((name, idx) => {
+      if (idx % tuesdaySlotCount === tuesdayIndex) guaranteed.push(name)
+    })
+  }
+  const remaining = Math.max(0, size - guaranteed.length)
+  const restPool = eligible.filter((n) => !guaranteed.includes(n))
+  const rest = remaining > 0 ? pickMembers(restPool.length ? restPool : eligible, remaining, startOffset, exclude) : []
+  return [...guaranteed, ...rest.filter((n) => !guaranteed.includes(n))].slice(0, size)
+}
+
 /**
  * Team build engine:
  * 1) All Sunday services → 10 members each (TL + VTL first).
@@ -112,14 +136,16 @@ function teamFromMembers(members, kind) {
  * 3) Igaburo service(s) → 10 members each.
  * Friday services are skipped (protocol does not serve on Friday).
  * Same calendar day: SS1 and SS2 prefer different members when pool allows.
+ * Tuesday-only members are placed on Tuesday teams only.
  */
-export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = true } = {}) {
+export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = true, serveDaysByName } = {}) {
   const pool = shuffle ? shuffleCopy(protocolPool) : [...protocolPool].sort((a, b) => a.localeCompare(b))
   if (pool.length < FULL_ROSTER_TEAM_SIZE) {
     throw new Error('Not enough protocol members for a full roster team')
   }
 
   const slots = buildTeamSlotsFromServices(services)
+  const tuesdaySlotCount = slots.filter((s) => s.kind === 'tuesday').length
   const usedOnDate = new Map()
   let sundayIndex = 0
   let tuesdayIndex = 0
@@ -131,7 +157,14 @@ export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = tru
 
     if (slot.kind === 'sunday') {
       const exclude = usedOnDate.get(slot.serviceDate) ?? new Set()
-      const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, sundayIndex * 7, exclude)
+      const members = pickForKind(
+        pool,
+        'sunday',
+        FULL_ROSTER_TEAM_SIZE,
+        sundayIndex * 7,
+        exclude,
+        serveDaysByName,
+      )
       members.forEach((m) => exclude.add(m))
       usedOnDate.set(slot.serviceDate, exclude)
       sundayIndex += 1
@@ -139,18 +172,41 @@ export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = tru
     }
 
     if (slot.kind === 'tuesday') {
-      const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, tuesdayIndex * 7 + 2)
+      const members = pickForKind(
+        pool,
+        'tuesday',
+        FULL_ROSTER_TEAM_SIZE,
+        tuesdayIndex * 7 + 2,
+        new Set(),
+        serveDaysByName,
+        tuesdayIndex,
+        tuesdaySlotCount,
+      )
       tuesdayIndex += 1
       return { ...base, ...teamFromMembers(members, 'tuesday') }
     }
 
     if (slot.kind === 'igaburo') {
-      const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, igaburoIndex * 9 + 3)
+      const members = pickForKind(
+        pool,
+        'igaburo',
+        FULL_ROSTER_TEAM_SIZE,
+        igaburoIndex * 9 + 3,
+        new Set(),
+        serveDaysByName,
+      )
       igaburoIndex += 1
       return { ...base, ...teamFromMembers(members, 'igaburo') }
     }
 
-    const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, weekdayIndex * 5 + 11)
+    const members = pickForKind(
+      pool,
+      'weekday',
+      FULL_ROSTER_TEAM_SIZE,
+      weekdayIndex * 5 + 11,
+      new Set(),
+      serveDaysByName,
+    )
     weekdayIndex += 1
     return { ...base, ...teamFromMembers(members, 'weekday') }
   })

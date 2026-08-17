@@ -39,8 +39,8 @@ export function AuthProvider({ children }) {
   }, [refresh])
 
   const login = useCallback(
-    async (email, password) => {
-      const data = await api.login(email, password)
+    async (username, password) => {
+      const data = await api.login(username, password)
       applySession(data)
       return data.user
     },

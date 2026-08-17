@@ -4,6 +4,8 @@ export const DEFAULT_RULE_CONFIGURATION = [
   { id: 'sunday-team-size', category: 'Service team', name: 'Sunday team size', severity: 'Error', enabled: true },
   { id: 'tuesday-team-size', category: 'Service team', name: 'Tuesday team size', severity: 'Error', enabled: true },
   { id: 'no-friday-teams', category: 'Service team', name: 'No Friday protocol teams', severity: 'Error', enabled: true },
+  { id: 'member-availability', category: 'Service team', name: 'Member duty availability', severity: 'Error', enabled: true },
+  { id: 'serve-days-match', category: 'Service team', name: 'Serve days match service type', severity: 'Error', enabled: true },
   { id: 'min-team-size', category: 'Service team', name: 'Minimum team size', severity: 'Error', enabled: true },
   { id: 'max-team-size', category: 'Service team', name: 'Maximum team size', severity: 'Error', enabled: true },
   { id: 'publish-block-errors', category: 'Schedule', name: 'Block publish on errors', severity: 'Error', enabled: true },

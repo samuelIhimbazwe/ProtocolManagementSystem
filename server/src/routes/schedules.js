@@ -4,6 +4,9 @@ import { db, audit } from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { loadRulesFromDb } from '../lib/settingsStore.js'
 import { validateSchedulePayload, publishBlocked } from '../lib/validation.js'
+import { sanitizeTeamAssignments } from '../lib/teamEngine.js'
+import { serveDaysMapFromMembers } from '../lib/memberAvailability.js'
+import { protocolNamePool } from '../pilotData.js'
 import {
   ensureDraftForMonth,
   getDraftRow,
@@ -31,8 +34,26 @@ function rowIsPublic(row) {
 
 async function attachValidation(payload) {
   const rules = await loadRulesFromDb()
-  const { rows, summary } = validateSchedulePayload(payload, rules)
-  return { ...payload, validationRows: rows, validationSummary: summary }
+  const memberRows = await db.prepare(`SELECT * FROM members`).all()
+  const memberByName = Object.fromEntries(memberRows.map((m) => [m.name, m]))
+  const serveDaysByName = serveDaysMapFromMembers(memberRows)
+  const protocolPool = protocolNamePool(memberRows)
+  const teamAssignments = sanitizeTeamAssignments(payload.teamAssignments ?? [], {
+    protocolPool,
+    serveDaysByName,
+  })
+  const leadershipReview = teamAssignments
+    .filter((t) => t.kind === 'sunday')
+    .slice(0, 4)
+    .map((t, i) => ({
+      date: t.date,
+      tl: t.teamLeader,
+      vtl: t.viceTeamLeader,
+      status: payload.leadershipReview?.[i]?.status ?? (i < 3 ? 'Approved' : 'Pending approval'),
+    }))
+  const sanitized = { ...payload, teamAssignments, leadershipReview }
+  const { rows, summary } = validateSchedulePayload(sanitized, rules, { memberByName, serveDaysByName })
+  return { ...sanitized, validationRows: rows, validationSummary: summary }
 }
 
 function resolveMonthKey(req) {
@@ -294,9 +315,8 @@ router.get('/validate', authMiddleware, async (req, res) => {
   const draft = await getDraftRow(monthKey)
   if (!draft) return res.status(404).json({ error: 'No draft schedule' })
   const payload = parsePayload(draft)
-  const rules = await loadRulesFromDb()
-  const result = validateSchedulePayload(payload, rules)
-  return res.json(result)
+  const validated = await attachValidation(payload)
+  return res.json({ rows: validated.validationRows, summary: validated.validationSummary })
 })
 
 router.post('/publish', authMiddleware, async (req, res) => {
@@ -313,7 +333,8 @@ router.post('/publish', authMiddleware, async (req, res) => {
 
   const rules = await loadRulesFromDb()
   const payload = parsePayload(draft)
-  const validation = validateSchedulePayload(payload, rules)
+  const validated = await attachValidation(payload)
+  const validation = { rows: validated.validationRows, summary: validated.validationSummary }
   if (publishBlocked(validation.summary, rules)) {
     return res.status(400).json({
       error: 'Publish blocked — fix validation errors first',
@@ -329,12 +350,13 @@ router.post('/publish', authMiddleware, async (req, res) => {
   // Live month publishes are public; future months stay private until Make public.
   const makePublic = monthKey <= live
   const publishId = uuid()
-  payload.publishedAt = new Date().toISOString()
-  payload.versionLabel = versionLabel
-  payload.validationSummary = validation.summary
-  payload.validationRows = validation.rows
-  payload.monthKey = monthKey
-  payload.monthLabel = payload.monthLabel || monthLabelFromKey(monthKey)
+  const publishPayload = {
+    ...validated,
+    publishedAt: new Date().toISOString(),
+    versionLabel,
+    monthKey,
+    monthLabel: validated.monthLabel || monthLabelFromKey(monthKey),
+  }
 
   const publisher = await db.prepare(`SELECT display_name FROM users WHERE id = ?`).get(req.auth.sub)
 
@@ -343,22 +365,22 @@ router.post('/publish', authMiddleware, async (req, res) => {
       `INSERT INTO schedule_versions (id, version_label, status, month_key, payload_json, published_at, published_by_user_id, is_public)
        VALUES (?, ?, 'published', ?, ?, datetime('now'), ?, ?)`,
     )
-    .run(publishId, versionLabel, monthKey, JSON.stringify(payload), req.auth.sub, makePublic ? 1 : 0)
+    .run(publishId, versionLabel, monthKey, JSON.stringify(publishPayload), req.auth.sub, makePublic ? 1 : 0)
 
   await audit('schedule.publish', req.auth.sub, {
     versionLabel,
     monthKey,
-    monthLabel: payload.monthLabel || monthKey,
+    monthLabel: publishPayload.monthLabel || monthKey,
     isPublic: makePublic,
     summary: makePublic
-      ? `Schedule ${versionLabel} published for ${payload.monthLabel || monthKey}`
-      : `Schedule ${versionLabel} published privately for ${payload.monthLabel || monthKey}`,
+      ? `Schedule ${versionLabel} published for ${publishPayload.monthLabel || monthKey}`
+      : `Schedule ${versionLabel} published privately for ${publishPayload.monthLabel || monthKey}`,
   })
 
   return res.json({
     versionLabel,
     publishedId: publishId,
-    publishedAt: payload.publishedAt,
+    publishedAt: publishPayload.publishedAt,
     publishedBy: publisher?.display_name ?? null,
     monthKey,
     isPublic: makePublic,

@@ -14,7 +14,7 @@ export default function LoginPage() {
   const { login } = useAuth()
   const { roleId, setRoleId, memberId, setMemberId, demoMode } = useRole()
   const [remember, setRemember] = useState(false)
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -29,7 +29,7 @@ export default function LoginPage() {
     if (USE_API) {
       setSubmitting(true)
       try {
-        await login(email.trim(), password)
+        await login(username.trim(), password)
         navigate('/')
       } catch (err) {
         setError(err.message ?? 'Sign in failed')
@@ -85,18 +85,18 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="pmss-login-form">
             <div className="pmss-login-field">
-              <label className="pmss-auth-label" htmlFor="login-email">
-                Email
+              <label className="pmss-auth-label" htmlFor="login-username">
+                Username
                 {USE_API && <span className="pmss-auth-required">*</span>}
               </label>
               <input
-                id="login-email"
-                type="email"
+                id="login-username"
+                type="text"
                 className="pmss-input pmss-login-input"
-                placeholder={USE_API ? 'd.mugisha@church.internal' : 'you@example.com'}
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder={USE_API ? 'i.wiclef' : 'username'}
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required={USE_API}
               />
             </div>

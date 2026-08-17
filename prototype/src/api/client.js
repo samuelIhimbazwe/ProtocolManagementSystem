@@ -66,8 +66,8 @@ export async function apiDownload(path, filename) {
   URL.revokeObjectURL(url)
 }
 
-export async function login(email, password) {
-  const data = await apiFetch('/auth/login', { method: 'POST', body: { email, password }, auth: false })
+export async function login(username, password) {
+  const data = await apiFetch('/auth/login', { method: 'POST', body: { username, password }, auth: false })
   setAuthToken(data.token)
   return data
 }

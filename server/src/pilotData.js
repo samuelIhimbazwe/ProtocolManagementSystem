@@ -17,32 +17,36 @@ export const PILOT_SERVICES = [
   { id: 's14', name: 'Sunday Service 2', date: '2026-08-23', day: 'Sunday', status: 'Scheduled' },
   { id: 's15', name: 'Tuesday Service', date: '2026-08-25', day: 'Tuesday', status: 'Scheduled' },
   { id: 's16', name: 'Friday Service', date: '2026-08-28', day: 'Friday', status: 'Scheduled' },
-  { id: 's17', name: 'Igaburo Service', date: '2026-08-29', day: 'Saturday', status: 'Scheduled' },
   { id: 's18', name: 'Sunday Service 1', date: '2026-08-30', day: 'Sunday', status: 'Scheduled' },
   { id: 's19', name: 'Sunday Service 2', date: '2026-08-30', day: 'Sunday', status: 'Scheduled' },
 ]
 
 export const PILOT_CHOIR_ASSIGNMENTS = [
-  { service: 'Sunday Service 1', date: '02 Aug', choirs: 'Hope Choir, El Bethel Choir, Elim Choir', status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '02 Aug', choirs: "Ijwi ry'Umwami Yesu Choir, Integuza Choir, Yerusalemu Choir", status: 'Assigned' },
-  { service: 'Sunday Service 1', date: '09 Aug', choirs: "Hope Choir, Ijwi ry'Umwami Yesu Choir, Integuza Choir", status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '09 Aug', choirs: 'El Bethel Choir, Elim Choir', status: 'Assigned' },
-  { service: 'Sunday Service 1', date: '16 Aug', choirs: 'Hope Choir, El Bethel Choir, Integuza Choir', status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '16 Aug', choirs: "Ijwi ry'Umwami Yesu Choir, Elim Choir, Beulah Choir", status: 'Assigned' },
-  { service: 'Sunday Service 1', date: '23 Aug', choirs: "Hope Choir, Elim Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '23 Aug', choirs: 'El Bethel Choir, Integuza Choir', status: 'Assigned' },
-  { service: 'Sunday Service 1', date: '30 Aug', choirs: "Hope Choir, El Bethel Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '30 Aug', choirs: 'Elim Choir, Integuza Choir', status: 'Assigned' },
-  { service: 'Tuesday Service', date: '04 Aug', choirs: 'El Bethel Choir', status: 'Assigned' },
-  { service: 'Tuesday Service', date: '11 Aug', choirs: "Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
-  { service: 'Tuesday Service', date: '18 Aug', choirs: 'Elim Choir', status: 'Assigned' },
-  { service: 'Tuesday Service', date: '25 Aug', choirs: 'Integuza Choir', status: 'Assigned' },
-  { service: 'Friday Service', date: '07 Aug', choirs: 'Integuza Choir', status: 'Assigned' },
-  { service: 'Friday Service', date: '14 Aug', choirs: 'El Bethel Choir', status: 'Assigned' },
-  { service: 'Friday Service', date: '21 Aug', choirs: "Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
-  { service: 'Friday Service', date: '28 Aug', choirs: 'Elim Choir', status: 'Assigned' },
-  { service: 'Igaburo Service', date: '29 Aug', choirs: 'El Bethel Choir, Integuza Choir', status: 'Assigned' },
+  { service: 'Tuesday Service', date: '04 Aug', serviceDate: '2026-08-04', choirs: "Worship Team, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
+  { service: 'Friday Service', date: '07 Aug', serviceDate: '2026-08-07', choirs: 'Integuza Choir', status: 'Assigned' },
+  { service: 'Sunday Service 1', date: '09 Aug', serviceDate: '2026-08-09', choirs: "Hope Choir, Ijwi ry'Umwami Yesu Choir, El Bethel Choir", status: 'Assigned' },
+  { service: 'Sunday Service 2', date: '09 Aug', serviceDate: '2026-08-09', choirs: 'Elim Choir, Integuza Choir', status: 'Assigned' },
+  { service: 'Tuesday Service', date: '11 Aug', serviceDate: '2026-08-11', choirs: 'Worship Team, Elim Choir', status: 'Assigned' },
+  { service: 'Friday Service', date: '14 Aug', serviceDate: '2026-08-14', choirs: 'Beulah Choir', status: 'Assigned' },
+  { service: 'Sunday Service 1', date: '16 Aug', serviceDate: '2026-08-16', choirs: 'Hope Choir, Integuza Choir, Elim Choir', status: 'Assigned' },
+  { service: 'Sunday Service 2', date: '16 Aug', serviceDate: '2026-08-16', choirs: "Yerusalemu Choir, El Bethel Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
+  { service: 'Tuesday Service', date: '18 Aug', serviceDate: '2026-08-18', choirs: 'Worship Team, El Bethel Choir', status: 'Assigned' },
+  { service: 'Friday Service', date: '21 Aug', serviceDate: '2026-08-21', choirs: "Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
+  { service: 'Sunday Service 1', date: '23 Aug', serviceDate: '2026-08-23', choirs: 'Hope Choir, El Bethel Choir, Elim Choir', status: 'Assigned' },
+  { service: 'Sunday Service 2', date: '23 Aug', serviceDate: '2026-08-23', choirs: "Integuza Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
+  { service: 'Tuesday Service', date: '25 Aug', serviceDate: '2026-08-25', choirs: 'Worship Team, Integuza Choir', status: 'Assigned' },
+  { service: 'Friday Service', date: '28 Aug', serviceDate: '2026-08-28', choirs: 'Elim Choir', status: 'Assigned' },
+  { service: 'Sunday Service 1', date: '30 Aug', serviceDate: '2026-08-30', choirs: "Hope Choir, Integuza Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
+  { service: 'Sunday Service 2', date: '30 Aug', serviceDate: '2026-08-30', choirs: 'Beulah Choir, Elim Choir, El Bethel Choir', status: 'Assigned' },
 ]
+
+export const IGABURO_SEP_CHOIR = {
+  service: 'Igaburo Service',
+  date: '05 Sep',
+  serviceDate: '2026-09-05',
+  choirs: 'Integuza Choir, Yerusalemu Choir',
+  status: 'Assigned',
+}
 
 export const ADMIN_ROSTER = [
   { id: '1', name: 'Samuel Niyonzima', role: 'President' },
@@ -195,5 +199,7 @@ export function buildMemberRows() {
 }
 
 export function protocolNamePool(members) {
-  return members.filter((m) => m.role === 'Member' && m.status === 'Active').map((m) => m.name)
+  return members
+    .filter((m) => m.role === 'Member' && m.status === 'Active' && (m.availability ?? 'available') === 'available')
+    .map((m) => m.name)
 }

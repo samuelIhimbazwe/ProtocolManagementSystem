@@ -58,10 +58,13 @@ export function regenerateChoirsForService(service, choirsCatalog) {
     return joinChoirList(pickN([...primary, ...secondary], 3))
   }
   if (service === 'Igaburo Service') {
-    return joinChoirList(pickN(primary, 2))
+    return joinChoirList(pickN([...primary, ...secondary], 2))
   }
-  if (service === 'Tuesday Service' || service === 'Friday Service') {
-    return joinChoirList(pickN(primary, 1))
+  if (service === 'Tuesday Service') {
+    return joinChoirList(['Worship Team', ...pickN(primary, 1)])
+  }
+  if (service === 'Friday Service') {
+    return joinChoirList(pickN([...primary, ...secondary], 1))
   }
   return joinChoirList(pickN(primary, 2))
 }

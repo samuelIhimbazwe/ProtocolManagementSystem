@@ -21,7 +21,7 @@ export const MOBILE_NAV = [
 export const CHOIRS = {
   primary: ['El Bethel Choir', "Ijwi ry'Umwami Yesu Choir", 'Elim Choir', 'Integuza Choir'],
   secondary: ['Yerusalemu Choir', 'Beulah Choir'],
-  special: ['Hope Choir'],
+  special: ['Hope Choir', 'Worship Team'],
 }
 
 export const DASHBOARD_STATS = {
@@ -162,6 +162,8 @@ export const MEMBERS = [
     ...a,
     phone: phoneForIndex(i),
     status: 'Active',
+    availability: 'available',
+    serveDays: 'all',
     attendanceRate: null,
     choir: null,
   })),
@@ -173,6 +175,8 @@ export const MEMBERS = [
       phone: phoneForIndex(10 + i),
       role: 'Member',
       status: 'Active',
+      availability: 'available',
+      serveDays: 'all',
       attendanceRate: meta.attendanceRate,
       choir: meta.choir,
     }
@@ -196,31 +200,27 @@ export const SERVICES = [
   { id: 's14', name: 'Sunday Service 2', date: '2026-08-23', day: 'Sunday', status: 'Published' },
   { id: 's15', name: 'Tuesday Service', date: '2026-08-25', day: 'Tuesday', status: 'Published' },
   { id: 's16', name: 'Friday Service', date: '2026-08-28', day: 'Friday', status: 'Published' },
-  { id: 's17', name: 'Igaburo Service', date: '2026-08-29', day: 'Saturday', status: 'Published' },
   { id: 's18', name: 'Sunday Service 1', date: '2026-08-30', day: 'Sunday', status: 'Published' },
   { id: 's19', name: 'Sunday Service 2', date: '2026-08-30', day: 'Sunday', status: 'Published' },
 ]
 
 export const CHOIR_ASSIGNMENTS = [
-  { service: 'Sunday Service 1', date: '02 Aug', choirs: 'Hope Choir, El Bethel Choir, Elim Choir', status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '02 Aug', choirs: "Ijwi ry'Umwami Yesu Choir, Integuza Choir, Yerusalemu Choir", status: 'Assigned' },
-  { service: 'Sunday Service 1', date: '09 Aug', choirs: "Hope Choir, Ijwi ry'Umwami Yesu Choir, Integuza Choir", status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '09 Aug', choirs: 'El Bethel Choir, Elim Choir', status: 'Assigned' },
-  { service: 'Sunday Service 1', date: '16 Aug', choirs: 'Hope Choir, El Bethel Choir, Integuza Choir', status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '16 Aug', choirs: "Ijwi ry'Umwami Yesu Choir, Elim Choir, Beulah Choir", status: 'Assigned' },
-  { service: 'Sunday Service 1', date: '23 Aug', choirs: "Hope Choir, Elim Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '23 Aug', choirs: 'El Bethel Choir, Integuza Choir', status: 'Assigned' },
-  { service: 'Sunday Service 1', date: '30 Aug', choirs: "Hope Choir, El Bethel Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
-  { service: 'Sunday Service 2', date: '30 Aug', choirs: 'Elim Choir, Integuza Choir', status: 'Assigned' },
-  { service: 'Tuesday Service', date: '04 Aug', choirs: 'El Bethel Choir', status: 'Assigned' },
-  { service: 'Tuesday Service', date: '11 Aug', choirs: "Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
-  { service: 'Tuesday Service', date: '18 Aug', choirs: 'Elim Choir', status: 'Assigned' },
-  { service: 'Tuesday Service', date: '25 Aug', choirs: 'Integuza Choir', status: 'Assigned' },
+  { service: 'Tuesday Service', date: '04 Aug', choirs: "Worship Team, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
   { service: 'Friday Service', date: '07 Aug', choirs: 'Integuza Choir', status: 'Assigned' },
-  { service: 'Friday Service', date: '14 Aug', choirs: 'El Bethel Choir', status: 'Assigned' },
+  { service: 'Sunday Service 1', date: '09 Aug', choirs: "Hope Choir, Ijwi ry'Umwami Yesu Choir, El Bethel Choir", status: 'Assigned' },
+  { service: 'Sunday Service 2', date: '09 Aug', choirs: 'Elim Choir, Integuza Choir', status: 'Assigned' },
+  { service: 'Tuesday Service', date: '11 Aug', choirs: 'Worship Team, Elim Choir', status: 'Assigned' },
+  { service: 'Friday Service', date: '14 Aug', choirs: 'Beulah Choir', status: 'Assigned' },
+  { service: 'Sunday Service 1', date: '16 Aug', choirs: 'Hope Choir, Integuza Choir, Elim Choir', status: 'Assigned' },
+  { service: 'Sunday Service 2', date: '16 Aug', choirs: "Yerusalemu Choir, El Bethel Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
+  { service: 'Tuesday Service', date: '18 Aug', choirs: 'Worship Team, El Bethel Choir', status: 'Assigned' },
   { service: 'Friday Service', date: '21 Aug', choirs: "Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
+  { service: 'Sunday Service 1', date: '23 Aug', choirs: 'Hope Choir, El Bethel Choir, Elim Choir', status: 'Assigned' },
+  { service: 'Sunday Service 2', date: '23 Aug', choirs: "Integuza Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
+  { service: 'Tuesday Service', date: '25 Aug', choirs: 'Worship Team, Integuza Choir', status: 'Assigned' },
   { service: 'Friday Service', date: '28 Aug', choirs: 'Elim Choir', status: 'Assigned' },
-  { service: 'Igaburo Service', date: '29 Aug', choirs: 'El Bethel Choir, Integuza Choir', status: 'Assigned' },
+  { service: 'Sunday Service 1', date: '30 Aug', choirs: "Hope Choir, Integuza Choir, Ijwi ry'Umwami Yesu Choir", status: 'Assigned' },
+  { service: 'Sunday Service 2', date: '30 Aug', choirs: 'Beulah Choir, Elim Choir, El Bethel Choir', status: 'Assigned' },
 ]
 
 export const TEAM_ASSIGNMENTS = buildMonthlyServiceTeams(PROTOCOL_NAMES, SERVICES, { shuffle: false })
@@ -241,7 +241,7 @@ export const VALIDATION_ROWS = [
   { rule: 'Sunday team size', issue: 'All Sunday services filled with 10 members (incl. TL/VTL)', severity: 'Passed', service: 'August Sundays', status: 'Resolved' },
   { rule: 'Tuesday team size', issue: 'All Tuesday services filled with 10 members (incl. TL/VTL)', severity: 'Passed', service: 'August Tuesdays', status: 'Resolved' },
   { rule: 'No Friday protocol teams', issue: 'Protocol does not serve on Friday — no Friday teams present', severity: 'Passed', service: 'Friday services', status: 'Resolved' },
-  { rule: 'Igaburo team size', issue: 'Igaburo Service filled with 10 members (incl. TL/VTL)', severity: 'Passed', service: '29 Aug Igaburo', status: 'Resolved' },
+  { rule: 'Igaburo team size', issue: 'Igaburo is 5 Sep (Integuza, Yerusalemu) — scheduled in September', severity: 'Passed', service: '05 Sep Igaburo', status: 'Resolved' },
 ]
 
 export const SCHEDULE_HISTORY = [

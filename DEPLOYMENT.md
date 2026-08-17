@@ -102,7 +102,7 @@ npm run dev
 
 UI: http://localhost:5173 · API: http://localhost:3001
 
-Demo password: `Password123!` (e.g. `d.mugisha`, `j.ndayisaba`, `m.uwamahoro`).
+Coordinator login: `coordinator@church.internal` / `Password123!`
 
 ### Unified local production (API + UI one port)
 

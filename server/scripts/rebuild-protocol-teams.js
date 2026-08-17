@@ -3,6 +3,7 @@ import { buildMonthlyServiceTeams } from '../src/lib/teamEngine.js'
 import { validateSchedulePayload } from '../src/lib/validation.js'
 import { loadRulesFromDb, ensureDefaultRules } from '../src/lib/settingsStore.js'
 import { protocolNamePool } from '../src/pilotData.js'
+import { serveDaysMapFromMembers } from '../src/lib/memberAvailability.js'
 
 await initSchema()
 await ensureDefaultRules()
@@ -20,7 +21,10 @@ if (names.length < 10) {
   names = [...new Set((payload.teamAssignments ?? []).flatMap((t) => t.members ?? []))]
 }
 
-const teams = buildMonthlyServiceTeams(names, payload.services ?? [], { shuffle: false })
+const teams = buildMonthlyServiceTeams(names, payload.services ?? [], {
+  shuffle: false,
+  serveDaysByName: serveDaysMapFromMembers(memberRows),
+})
 payload.teamAssignments = teams
 payload.leadershipReview = teams
   .filter((t) => t.kind === 'sunday')

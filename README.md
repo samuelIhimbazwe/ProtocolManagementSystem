@@ -20,7 +20,7 @@ npm run build --prefix prototype
 cd server && SERVE_WEB=1 npm start
 ```
 
-Open **http://localhost:3001** · Password **`Password123!`** · Coordinator **`d.mugisha`**
+Open **http://localhost:3001** · Coordinator **`coordinator@church.internal`** · Password **`Password123!`**
 
 ## UI-only demo (no backend)
 

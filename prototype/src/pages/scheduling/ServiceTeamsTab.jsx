@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import DisplayFormatToggle from '../../components/DisplayFormatToggle'
 import ServiceTeamsBulletin from '../../components/bulletin/ServiceTeamsBulletin'
 import ServiceTeamsList from '../../components/list/ServiceTeamsList'
@@ -7,9 +7,10 @@ import { RefreshCw } from 'lucide-react'
 import { ServiceCard, Badge } from '../../layouts/AppShell'
 import Modal from '../../components/Modal'
 import ScheduleDownloadMenu from '../../components/ScheduleDownloadMenu'
-import TeamCardActions, { normalizeTeam } from '../../components/TeamCardActions'
+import TeamCardActions, { normalizeTeam, dropUnavailableFromTeam } from '../../components/TeamCardActions'
 import TeamMemberItems from '../../components/TeamMemberItems'
 import { MEMBERS } from '../../data/mock'
+import { isDutyAvailable, canServeTeamKind, serveDaysMapFromMembers } from '../../lib/memberAvailability'
 import {
   FULL_ROSTER_TEAM_SIZE,
   buildMonthlyServiceTeams,
@@ -37,14 +38,19 @@ export default function ServiceTeamsTab({
   onTeamsBuilt,
   services: servicesProp = [],
   protocolPool: protocolPoolProp,
+  serveDaysByName: serveDaysByNameProp,
   monthLabel = 'August 2026',
 }) {
   const [format, setFormat] = useDisplayFormat('pmss-view-teams', 'cards')
   const protocolPool = useMemo(
     () =>
       protocolPoolProp ??
-      MEMBERS.filter((m) => m.role === 'Member' && m.status === 'Active').map((m) => m.name),
+      MEMBERS.filter((m) => m.role === 'Member' && isDutyAvailable(m)).map((m) => m.name),
     [protocolPoolProp],
+  )
+  const serveDaysByName = useMemo(
+    () => serveDaysByNameProp ?? serveDaysMapFromMembers(MEMBERS),
+    [serveDaysByNameProp],
   )
 
   const services = servicesProp ?? []
@@ -53,6 +59,20 @@ export default function ServiceTeamsTab({
   const [internalTeams, setInternalTeams] = useState([])
   const teams = controlledTeams ?? internalTeams
   const setTeams = onTeamsChange ?? setInternalTeams
+  const allowedNames = useMemo(() => new Set(protocolPool), [protocolPool])
+  const dutyTeams = useMemo(
+    () => teams.map((t) => dropUnavailableFromTeam(t, allowedNames)),
+    [teams, allowedNames],
+  )
+
+  useEffect(() => {
+    if (!canEdit || !onTeamsChange) return
+    const dirty = teams.some(
+      (t, i) => (t.members ?? []).join('\n') !== (dutyTeams[i]?.members ?? []).join('\n'),
+    )
+    if (!dirty) return
+    onTeamsChange(dutyTeams)
+  }, [canEdit, teams, dutyTeams, onTeamsChange])
   const [modal, setModal] = useState(null)
   const [pickMember, setPickMember] = useState('')
   const [replaceFrom, setReplaceFrom] = useState('')
@@ -66,7 +86,7 @@ export default function ServiceTeamsTab({
       return
     }
     try {
-      const built = buildMonthlyServiceTeams(protocolPool, services, { shuffle })
+      const built = buildMonthlyServiceTeams(protocolPool, services, { shuffle, serveDaysByName })
       const withKeys = built.map((t) => ({ ...normalizeTeam(t), _key: teamKey(t) }))
       const fullRoster = withKeys.filter((t) => isFullRosterKind(t.kind)).length
       if (onTeamsBuilt) {
@@ -94,7 +114,10 @@ export default function ServiceTeamsTab({
     )
   }
 
-  const availableForTeam = (team) => protocolPool.filter((name) => !team.members.includes(name))
+  const availableForTeam = (team) =>
+    protocolPool.filter(
+      (name) => !team.members.includes(name) && canServeTeamKind(serveDaysByName[name], team.kind),
+    )
 
   const openReplaceModal = (index, memberName) => {
     const team = teams[index]
@@ -140,16 +163,16 @@ export default function ServiceTeamsTab({
   const handleAction = (index, actionId) => openModal(index, actionId)
 
   const exportTeams = async (formatId) => {
-    if (!teams.length) {
+    if (!dutyTeams.length) {
       showToast('No teams to download')
       return
     }
     try {
       if (formatId === 'csv') {
-        downloadServiceTeamsCsv(teams, { monthLabel })
+        downloadServiceTeamsCsv(dutyTeams, { monthLabel })
         showToast('Service teams downloaded (CSV)')
       } else if (formatId === 'excel') {
-        downloadServiceTeamsExcel(teams, { monthLabel })
+        downloadServiceTeamsExcel(dutyTeams, { monthLabel })
         showToast('Service teams downloaded (Excel)')
       } else if (formatId === 'pdf') {
         // Prefer the visual bulletin (church header, weeks, editable labels)
@@ -160,7 +183,7 @@ export default function ServiceTeamsTab({
             fileName: `pmss-service-teams-bulletin.pdf`,
           })
         } else {
-          result = await downloadServiceTeamsPdf(teams, { monthLabel })
+          result = await downloadServiceTeamsPdf(dutyTeams, { monthLabel })
         }
         showToast(`Downloaded ${result?.fileName ?? 'bulletin.pdf'}`)
       }
@@ -188,6 +211,10 @@ export default function ServiceTeamsTab({
       showToast('Member already on this team')
       return
     }
+    if (!canServeTeamKind(serveDaysByName[pickMember], team.kind)) {
+      showToast(`${pickMember} serves on Tuesday only`)
+      return
+    }
     updateTeam(modal.index, (t) => ({ ...t, members: [...t.members, pickMember] }))
     showToast(`${pickMember} added to team`)
     closeModal()
@@ -213,6 +240,10 @@ export default function ServiceTeamsTab({
       showToast('Replacement is already on the team')
       return
     }
+    if (!canServeTeamKind(serveDaysByName[replaceTo], team.kind)) {
+      showToast(`${replaceTo} serves on Tuesday only`)
+      return
+    }
     updateTeam(modal.index, (t) => ({
       ...t,
       members: t.members.map((m) => (m === replaceFrom ? replaceTo : m)),
@@ -229,8 +260,9 @@ export default function ServiceTeamsTab({
         <DisplayFormatToggle format={format} onChange={setFormat} />
       </div>
       <p className="text-sm text-neutral-600 bg-primary-50 border border-primary-100 rounded-card px-4 py-3 pmss-no-print">
-        <strong className="text-neutral-900">{protocolPool.length} protocol members</strong> in roster. Build engine
-        fills <strong>Sunday and Tuesday services</strong> (and Igaburo) with{' '}
+        <strong className="text-neutral-900">{protocolPool.length} available protocol members</strong> in roster
+        (sick, pregnant, on leave, and other unavailable members are skipped). Tuesday-only members are assigned to
+        Tuesday services only. Build engine fills <strong>Sunday and Tuesday services</strong> (and Igaburo) with{' '}
         <strong>{FULL_ROSTER_TEAM_SIZE} members</strong> each (team leader + vice included). Protocol does{' '}
         <strong>not</strong> serve on Friday — those services are skipped. Works for any month after the calendar is
         generated.
@@ -281,7 +313,7 @@ export default function ServiceTeamsTab({
         <div className="pmss-offscreen-export" aria-hidden="true">
           <ServiceTeamsBulletin
             id="teams-bulletin"
-            teams={teams}
+            teams={dutyTeams}
             monthLabel={monthLabel}
             canEdit={false}
             onTeamsChange={setTeams}
@@ -291,14 +323,14 @@ export default function ServiceTeamsTab({
       {format === 'bulletin' ? (
         <ServiceTeamsBulletin
           id="teams-bulletin"
-          teams={teams}
+          teams={dutyTeams}
           monthLabel={monthLabel}
           canEdit={canEdit}
           onTeamsChange={setTeams}
         />
       ) : format === 'list' ? (
         <ServiceTeamsList
-          teams={teams}
+          teams={dutyTeams}
           canEdit={canEdit}
           onAction={handleAction}
           onRemoveMember={removeMember}
@@ -306,7 +338,7 @@ export default function ServiceTeamsTab({
         />
       ) : (
       <div className="grid md:grid-cols-2 gap-4">
-        {teams.map((t, i) => (
+        {dutyTeams.map((t, i) => (
           <ServiceCard
             key={t._key}
             title={t.date}
@@ -374,7 +406,7 @@ export default function ServiceTeamsTab({
             Roster is full ({FULL_ROSTER_TEAM_SIZE} members). Use Replace instead.
           </p>
         ) : active && availableForTeam(active).length === 0 ? (
-          <p className="text-sm text-neutral-600">All active protocol members are already on this team.</p>
+          <p className="text-sm text-neutral-600">All eligible protocol members are already on this team.</p>
         ) : (
           <>
             <label className="block text-sm font-medium text-neutral-700 mb-1.5">Member</label>

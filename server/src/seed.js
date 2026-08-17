@@ -4,6 +4,7 @@ import { db, initSchema, audit } from './db.js'
 import { buildMonthlyServiceTeams } from './lib/teamEngine.js'
 import { validateSchedulePayload } from './lib/validation.js'
 import { ensureDefaultRules, loadRulesFromDb } from './lib/settingsStore.js'
+import { serveDaysMapFromMembers } from './lib/memberAvailability.js'
 import {
   ADMIN_ROSTER,
   PILOT_CHOIR_ASSIGNMENTS,
@@ -15,6 +16,13 @@ import {
 } from './pilotData.js'
 
 export const SEED_PASSWORD = 'Password123!'
+
+/** Bootstrap login so the app stays usable after demo people are removed. */
+export const BOOTSTRAP_COORDINATOR = {
+  username: 'coordinator',
+  email: 'coordinator@church.internal',
+  displayName: 'Coordinator',
+}
 
 /** Plain protocol member — never TL/VTL in the default August 2026 schedule. */
 export const REGULAR_MEMBER_DEMO = {
@@ -28,7 +36,10 @@ export { usernameFromName }
 
 export async function buildDefaultSchedulePayload(members) {
   const pool = protocolNamePool(members)
-  const teamAssignments = buildMonthlyServiceTeams(pool, PILOT_SERVICES, { shuffle: false })
+  const teamAssignments = buildMonthlyServiceTeams(pool, PILOT_SERVICES, {
+    shuffle: false,
+    serveDaysByName: serveDaysMapFromMembers(members),
+  })
   const leadershipReview = teamAssignments
     .filter((t) => t.kind === 'sunday')
     .slice(0, 4)
@@ -106,20 +117,115 @@ async function ensureMemberEmails() {
   }
 }
 
-export async function seedDatabase({ force = false } = {}) {
+async function stripPeopleFromSchedules() {
+  const rows = await db.prepare(`SELECT id, payload_json FROM schedule_versions`).all()
+  for (const row of rows) {
+    let payload
+    try {
+      payload = JSON.parse(row.payload_json)
+    } catch {
+      continue
+    }
+    payload.teamAssignments = []
+    payload.leadershipReview = []
+    payload.validationRows = []
+    payload.validationSummary = { passed: 0, warnings: 0, errors: 0, status: 'PENDING' }
+    await db
+      .prepare(`UPDATE schedule_versions SET payload_json = ? WHERE id = ?`)
+      .run(JSON.stringify(payload), row.id)
+  }
+}
+
+export async function ensureBootstrapCoordinator() {
+  const hash = await bcrypt.hash(SEED_PASSWORD, 10)
+  const existing = await db
+    .prepare(`SELECT * FROM users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE`)
+    .get(BOOTSTRAP_COORDINATOR.username, BOOTSTRAP_COORDINATOR.email)
+
+  if (!existing) {
+    await db
+      .prepare(
+        `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status)
+         VALUES (?, ?, ?, ?, NULL, ?, 'coordinator', 'Active')`,
+      )
+      .run(
+        uuid(),
+        BOOTSTRAP_COORDINATOR.username,
+        BOOTSTRAP_COORDINATOR.email,
+        hash,
+        BOOTSTRAP_COORDINATOR.displayName,
+      )
+    console.log(
+      'Bootstrap coordinator: %s / %s (password %s)',
+      BOOTSTRAP_COORDINATOR.username,
+      BOOTSTRAP_COORDINATOR.email,
+      SEED_PASSWORD,
+    )
+    return
+  }
+
+  await db
+    .prepare(
+      `UPDATE users SET
+        username = ?, email = ?, password_hash = ?, member_id = NULL,
+        display_name = ?, app_role = 'coordinator', status = 'Active'
+       WHERE id = ?`,
+    )
+    .run(
+      BOOTSTRAP_COORDINATOR.username,
+      BOOTSTRAP_COORDINATOR.email,
+      hash,
+      BOOTSTRAP_COORDINATOR.displayName,
+      existing.id,
+    )
+}
+
+/** Remove all roster people and their logins so real data can be imported. */
+export async function wipeRosterAndDemoPeople() {
+  await db.exec(`
+    DELETE FROM contribution_followup_notes;
+    DELETE FROM contribution_followups;
+    DELETE FROM contribution_submissions;
+    DELETE FROM contribution_member_goals;
+    DELETE FROM attendance_records;
+    DELETE FROM attendance_sessions;
+    DELETE FROM office_reports;
+    DELETE FROM service_reports;
+    DELETE FROM password_reset_tokens;
+    DELETE FROM users;
+    DELETE FROM members;
+  `)
+  await stripPeopleFromSchedules()
+  await ensureBootstrapCoordinator()
+  console.log('Cleared seeded members, leaders, and related demo records.')
+}
+
+export async function seedDatabase({ force = false, demo = false } = {}) {
   await initSchema()
   await ensureDefaultRules()
 
-  await seedMembers(force)
-  await ensureMemberEmails()
+  const seedDemo = demo || process.env.SEED_DEMO === '1'
+
+  if (force && !seedDemo) {
+    await wipeRosterAndDemoPeople()
+    await seedFinanceDemo()
+    return
+  }
+
+  if (seedDemo) {
+    await seedMembers(force)
+    await ensureMemberEmails()
+  }
 
   const userCount = (await db.prepare(`SELECT COUNT(*) AS c FROM users`).get()).c
   if (userCount > 0 && !force) {
-    console.log('Database already seeded (%d users). Use --force to reseed.', userCount)
+    await ensureBootstrapCoordinator()
     await seedFinanceDemo()
-    await ensureRegularMemberDemo()
-    await ensureLeadershipDemos()
-    await ensureDutyLeaderDemos()
+    if (seedDemo) {
+      await ensureRegularMemberDemo()
+      await ensureLeadershipDemos()
+      await ensureDutyLeaderDemos()
+    }
     return
   }
 
@@ -136,9 +242,18 @@ export async function seedDatabase({ force = false } = {}) {
       DELETE FROM password_reset_tokens;
       DELETE FROM audit_log;
       DELETE FROM schedule_versions;
+      DELETE FROM office_reports;
+      DELETE FROM service_reports;
       DELETE FROM users;
+      DELETE FROM members;
     `)
-    await seedMembers(true)
+    if (seedDemo) await seedMembers(true)
+  }
+
+  if (!seedDemo) {
+    await ensureBootstrapCoordinator()
+    await seedFinanceDemo()
+    return
   }
 
   const hash = await bcrypt.hash(SEED_PASSWORD, 10)
@@ -507,8 +622,9 @@ export async function seedFinanceDemo() {
 
 if (process.argv[1]?.endsWith('seed.js')) {
   const force = process.argv.includes('--force')
+  const demo = process.argv.includes('--demo')
   initSchema()
-    .then(() => seedDatabase({ force }))
+    .then(() => seedDatabase({ force, demo }))
     .catch((e) => {
       console.error(e)
       process.exit(1)

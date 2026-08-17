@@ -1,4 +1,5 @@
 import { normalizeTeam, shuffleCopy, TEAM_LIMITS } from './teamUtils.js'
+import { canServeTeamKind } from './memberAvailability.js'
 
 export const FULL_ROSTER_TEAM_SIZE = 10
 
@@ -102,13 +103,37 @@ function teamFromMembers(members, kind) {
   })
 }
 
-export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = true } = {}) {
+function eligiblePool(pool, kind, serveDaysByName) {
+  if (!serveDaysByName) return pool
+  return pool.filter((name) => canServeTeamKind(serveDaysByName[name], kind))
+}
+
+function pickForKind(pool, kind, size, startOffset, exclude, serveDaysByName, tuesdayIndex, tuesdaySlotCount) {
+  const eligible = eligiblePool(pool, kind, serveDaysByName)
+  if (eligible.length < size) {
+    throw new Error(`Not enough protocol members for ${kind} teams`)
+  }
+  const guaranteed = []
+  if (kind === 'tuesday' && serveDaysByName && tuesdaySlotCount > 0) {
+    const tueOnly = eligible.filter((n) => (serveDaysByName[n] || 'all') === 'tuesday')
+    tueOnly.forEach((name, idx) => {
+      if (idx % tuesdaySlotCount === tuesdayIndex) guaranteed.push(name)
+    })
+  }
+  const remaining = Math.max(0, size - guaranteed.length)
+  const restPool = eligible.filter((n) => !guaranteed.includes(n))
+  const rest = remaining > 0 ? pickMembers(restPool.length ? restPool : eligible, remaining, startOffset, exclude) : []
+  return [...guaranteed, ...rest.filter((n) => !guaranteed.includes(n))].slice(0, size)
+}
+
+export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = true, serveDaysByName } = {}) {
   const pool = shuffle ? shuffleCopy(protocolPool) : [...protocolPool].sort((a, b) => a.localeCompare(b))
   if (pool.length < FULL_ROSTER_TEAM_SIZE) {
     throw new Error('Not enough protocol members for a full roster team')
   }
 
   const slots = buildTeamSlotsFromServices(services)
+  const tuesdaySlotCount = slots.filter((s) => s.kind === 'tuesday').length
   const usedOnDate = new Map()
   let sundayIndex = 0
   let tuesdayIndex = 0
@@ -120,7 +145,14 @@ export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = tru
 
     if (slot.kind === 'sunday') {
       const exclude = usedOnDate.get(slot.serviceDate) ?? new Set()
-      const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, sundayIndex * 7, exclude)
+      const members = pickForKind(
+        pool,
+        'sunday',
+        FULL_ROSTER_TEAM_SIZE,
+        sundayIndex * 7,
+        exclude,
+        serveDaysByName,
+      )
       members.forEach((m) => exclude.add(m))
       usedOnDate.set(slot.serviceDate, exclude)
       sundayIndex += 1
@@ -128,18 +160,41 @@ export function buildMonthlyServiceTeams(protocolPool, services, { shuffle = tru
     }
 
     if (slot.kind === 'tuesday') {
-      const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, tuesdayIndex * 7 + 2)
+      const members = pickForKind(
+        pool,
+        'tuesday',
+        FULL_ROSTER_TEAM_SIZE,
+        tuesdayIndex * 7 + 2,
+        new Set(),
+        serveDaysByName,
+        tuesdayIndex,
+        tuesdaySlotCount,
+      )
       tuesdayIndex += 1
       return { ...base, ...teamFromMembers(members, 'tuesday') }
     }
 
     if (slot.kind === 'igaburo') {
-      const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, igaburoIndex * 9 + 3)
+      const members = pickForKind(
+        pool,
+        'igaburo',
+        FULL_ROSTER_TEAM_SIZE,
+        igaburoIndex * 9 + 3,
+        new Set(),
+        serveDaysByName,
+      )
       igaburoIndex += 1
       return { ...base, ...teamFromMembers(members, 'igaburo') }
     }
 
-    const members = pickMembers(pool, FULL_ROSTER_TEAM_SIZE, weekdayIndex * 5 + 11)
+    const members = pickForKind(
+      pool,
+      'weekday',
+      FULL_ROSTER_TEAM_SIZE,
+      weekdayIndex * 5 + 11,
+      new Set(),
+      serveDaysByName,
+    )
     weekdayIndex += 1
     return { ...base, ...teamFromMembers(members, 'weekday') }
   })
@@ -151,4 +206,55 @@ export function minTeamSizeForRow(team) {
 
 export function maxTeamSizeForRow(team) {
   return isFullRosterKind(team.kind) ? FULL_ROSTER_TEAM_SIZE : TEAM_LIMITS.max
+}
+
+/** Remove unavailable / wrong-day members and refill rosters from the duty pool. */
+export function sanitizeTeamAssignments(teams, { protocolPool, serveDaysByName } = {}) {
+  if (!teams?.length || !protocolPool?.length) return teams ?? []
+
+  const pool = [...protocolPool]
+  const allowed = new Set(pool)
+  const tuesdaySlotCount = teams.filter((t) => t.kind === 'tuesday').length
+  const usedOnDate = new Map()
+  let tuesdayIndex = 0
+  let slotIndex = 0
+
+  return teams.map((team) => {
+    const kind = team.kind ?? 'weekday'
+    const targetSize = isFullRosterKind(kind)
+      ? FULL_ROSTER_TEAM_SIZE
+      : Math.min(team.targetSize ?? TEAM_LIMITS.max, TEAM_LIMITS.max)
+
+    let members = (team.members ?? []).filter(
+      (n) => allowed.has(n) && canServeTeamKind(serveDaysByName?.[n], kind),
+    )
+
+    if (kind === 'tuesday' && serveDaysByName && tuesdaySlotCount > 0) {
+      const eligible = eligiblePool(pool, kind, serveDaysByName)
+      const tueOnly = eligible.filter((n) => (serveDaysByName[n] || 'all') === 'tuesday')
+      tueOnly.forEach((name, idx) => {
+        if (idx % tuesdaySlotCount === tuesdayIndex && !members.includes(name)) {
+          members.push(name)
+        }
+      })
+      tuesdayIndex += 1
+    }
+
+    members = [...new Set(members)]
+    const exclude = kind === 'sunday' ? (usedOnDate.get(team.serviceDate) ?? new Set()) : new Set()
+    const refillPool = eligiblePool(pool, kind, serveDaysByName).filter(
+      (n) => !members.includes(n) && !exclude.has(n),
+    )
+
+    if (members.length < targetSize) {
+      const extra = pickMembers(refillPool, targetSize - members.length, slotIndex * 7, new Set(members))
+      members = [...members, ...extra]
+      if (kind === 'sunday') extra.forEach((m) => exclude.add(m))
+    }
+
+    if (kind === 'sunday') usedOnDate.set(team.serviceDate, exclude)
+    slotIndex += 1
+
+    return normalizeTeam({ ...team, members: members.slice(0, targetSize) })
+  })
 }

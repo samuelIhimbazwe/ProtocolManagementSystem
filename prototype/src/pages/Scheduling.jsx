@@ -17,6 +17,8 @@ import {
 import { PageHeader, DataTable, Badge } from '../layouts/AppShell'
 import { useRole } from '../context/RoleContext'
 import { useSchedule } from '../context/ScheduleContext'
+import { useMembers } from '../context/MembersContext'
+import { isDutyAvailable, serveDaysMapFromMembers } from '../lib/memberAvailability'
 import { USE_API } from '../api/config'
 import { publishSchedule, archiveSchedule, makeScheduleMonthPublic } from '../api/client'
 import { fetchScheduleHistory, saveScheduleDraft } from '../api/schedule'
@@ -46,6 +48,7 @@ const TABS = [
 
 export default function SchedulingPage() {
   const { permissions } = useRole()
+  const { members } = useMembers()
   const {
     payload,
     editable,
@@ -75,6 +78,12 @@ export default function SchedulingPage() {
     () => (payload.teamAssignments ?? []).map((t) => ({ ...normalizeTeam(t), _key: t.serviceId ?? t.date })),
     [payload.teamAssignments],
   )
+
+  const protocolPool = useMemo(
+    () => members.filter((m) => m.role === 'Member' && isDutyAvailable(m)).map((m) => m.name),
+    [members],
+  )
+  const serveDaysByName = useMemo(() => serveDaysMapFromMembers(members), [members])
 
   const choirRows = useMemo(
     () => (payload.choirAssignments ?? []).map((c, i) => ({ ...c, _key: `${c.service}-${c.date}-${i}` })),
@@ -539,6 +548,8 @@ export default function SchedulingPage() {
           onTeamsChange={setTeamRows}
           onTeamsBuilt={applyBuiltTeams}
           services={services}
+          protocolPool={protocolPool}
+          serveDaysByName={serveDaysByName}
           monthLabel={payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? calendarMonth)}
         />
       )}
