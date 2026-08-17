@@ -17,11 +17,11 @@ Local development can still use SQLite (no `DATABASE_URL`).
 1. Create a project and copy the connection string (`postgresql://…?sslmode=require`).
 2. You will paste it into Render as `DATABASE_URL`.
 
-Schema + demo seed run automatically on API startup (`initSchema` + `seedDatabase`). To reseed later:
+Schema, the coordinator login, and the ADEPR Kacyiru roster (53 real members) are created on API startup. Prototype demo people are **not** seeded in production; leftover demo names are removed on boot. To reset the roster later:
 
 ```bash
 cd server
-# with DATABASE_URL in .env
+# with DATABASE_URL in .env (Neon) or omit for local SQLite
 npm run seed -- --force
 ```
 

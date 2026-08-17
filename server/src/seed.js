@@ -9,11 +9,13 @@ import {
   ADMIN_ROSTER,
   PILOT_CHOIR_ASSIGNMENTS,
   PILOT_SERVICES,
+  PROTOCOL_NAMES,
   buildMemberRows,
   emailFromName,
   protocolNamePool,
   usernameFromName,
 } from './pilotData.js'
+import { REAL_ROSTER } from './realRoster.js'
 
 export const SEED_PASSWORD = 'Password123!'
 
@@ -81,6 +83,33 @@ async function seedMembers(force) {
   for (const m of buildMemberRows()) {
     await insert.run(m)
   }
+}
+
+async function seedRealMembers(force = false) {
+  const count = (await db.prepare(`SELECT COUNT(*) AS c FROM members`).get()).c
+  if (count > 0 && !force) return
+
+  const usedEmails = new Set()
+  const insert = db.prepare(`
+    INSERT INTO members (id, name, email, phone, role, status, attendance_rate, choir, availability, availability_note, serve_days)
+    VALUES (@id, @name, @email, @phone, @role, @status, @attendance_rate, @choir, @availability, @availability_note, @serve_days)
+  `)
+  for (const m of REAL_ROSTER) {
+    await insert.run({
+      id: String(m.id),
+      name: m.name,
+      email: m.email || emailFromName(m.name, usedEmails),
+      phone: m.phone ?? null,
+      role: m.role ?? 'Member',
+      status: m.status ?? 'Active',
+      attendance_rate: m.attendance_rate ?? null,
+      choir: m.choir ?? null,
+      availability: m.availability ?? 'available',
+      availability_note: m.availability_note ?? null,
+      serve_days: m.serve_days ?? 'all',
+    })
+  }
+  console.log('Seeded %d ADEPR Kacyiru protocol members.', REAL_ROSTER.length)
 }
 
 /** Fill missing roster emails so Create member accounts can select everyone. */
@@ -225,6 +254,118 @@ export async function ensureBootstrapCoordinator() {
     )
 }
 
+function demoPersonNameSet() {
+  return new Set([
+    ...ADMIN_ROSTER.map((a) => a.name),
+    ...PROTOCOL_NAMES,
+    REGULAR_MEMBER_DEMO.memberName,
+    REGULAR_MEMBER_DEMO.displayName,
+  ])
+}
+
+async function deleteMemberCascade(memberId) {
+  const subs = await db.prepare(`SELECT id FROM contribution_submissions WHERE member_id = ?`).all(memberId)
+  for (const s of subs) {
+    const fus = await db.prepare(`SELECT id FROM contribution_followups WHERE submission_id = ?`).all(s.id)
+    for (const f of fus) {
+      await db.prepare(`DELETE FROM contribution_followup_notes WHERE followup_id = ?`).run(f.id)
+    }
+    await db.prepare(`DELETE FROM contribution_followups WHERE submission_id = ?`).run(s.id)
+  }
+  await db.prepare(`DELETE FROM contribution_submissions WHERE member_id = ?`).run(memberId)
+  await db.prepare(`DELETE FROM contribution_member_goals WHERE member_id = ?`).run(memberId)
+  await db.prepare(`DELETE FROM attendance_records WHERE member_id = ?`).run(memberId)
+  await db
+    .prepare(`DELETE FROM users WHERE member_id = ? AND username != ? COLLATE NOCASE`)
+    .run(memberId, BOOTSTRAP_COORDINATOR.username)
+  await db.prepare(`UPDATE users SET member_id = NULL WHERE member_id = ?`).run(memberId)
+  await db.prepare(`DELETE FROM members WHERE id = ?`).run(memberId)
+}
+
+async function stripNamesFromSchedules(blocked) {
+  const rows = await db.prepare(`SELECT id, payload_json FROM schedule_versions`).all()
+  for (const row of rows) {
+    let payload
+    try {
+      payload = JSON.parse(row.payload_json)
+    } catch {
+      continue
+    }
+    const teams = payload.teamAssignments ?? []
+    payload.teamAssignments = teams.map((t) => {
+      const members = (t.members ?? []).filter((n) => !blocked.has(n))
+      let { teamLeader, viceTeamLeader } = t
+      if (teamLeader && !members.includes(teamLeader)) teamLeader = members[0] ?? null
+      if (viceTeamLeader && !members.includes(viceTeamLeader)) {
+        viceTeamLeader = members.find((m) => m !== teamLeader) ?? null
+      }
+      return { ...t, members, size: members.length, teamLeader, viceTeamLeader }
+    })
+    payload.leadershipReview = (payload.leadershipReview ?? []).map((r) => ({
+      ...r,
+      tl: blocked.has(r.tl) ? null : r.tl,
+      vtl: blocked.has(r.vtl) ? null : r.vtl,
+    }))
+    await db
+      .prepare(`UPDATE schedule_versions SET payload_json = ? WHERE id = ?`)
+      .run(JSON.stringify(payload), row.id)
+  }
+}
+
+/**
+ * Remove prototype roster names (Samuel Niyonzima, Jean Bosco Ndayisaba, …)
+ * from any database — including Neon — while keeping the coordinator login.
+ */
+export async function purgeSeededDemoPeople() {
+  const demoNames = demoPersonNameSet()
+  const members = await db.prepare(`SELECT id, name FROM members`).all()
+  const demoMembers = members.filter((m) => demoNames.has(m.name))
+  const realMembers = members.filter((m) => !demoNames.has(m.name))
+
+  if (demoMembers.length === 0) {
+    const demoUsers = await db.prepare(`SELECT id, username, display_name FROM users`).all()
+    const leftover = demoUsers.filter(
+      (u) =>
+        String(u.username).toLowerCase() !== BOOTSTRAP_COORDINATOR.username &&
+        (demoNames.has(u.display_name) || LEGACY_COORDINATOR_LOGINS.includes(String(u.username).toLowerCase())),
+    )
+    if (!leftover.length) return { removedMembers: 0, removedUsers: 0 }
+  }
+
+  if (members.length > 0 && realMembers.length === 0 && demoMembers.length > 0) {
+    await wipeRosterAndDemoPeople()
+    return { removedMembers: demoMembers.length, removedUsers: null, wiped: true }
+  }
+
+  for (const m of demoMembers) {
+    await deleteMemberCascade(m.id)
+  }
+
+  const users = await db.prepare(`SELECT id, username, display_name FROM users`).all()
+  let removedUsers = 0
+  for (const u of users) {
+    if (String(u.username).toLowerCase() === BOOTSTRAP_COORDINATOR.username) continue
+    const isDemo =
+      demoNames.has(u.display_name) || LEGACY_COORDINATOR_LOGINS.includes(String(u.username).toLowerCase())
+    if (!isDemo) continue
+    await db.prepare(`DELETE FROM password_reset_tokens WHERE user_id = ?`).run(u.id)
+    await db.prepare(`DELETE FROM users WHERE id = ?`).run(u.id)
+    removedUsers += 1
+  }
+
+  await stripNamesFromSchedules(demoNames)
+  await ensureBootstrapCoordinator()
+  if (demoMembers.length || removedUsers) {
+    console.log(
+      'Purged prototype demo people: %d member(s), %d login(s). Coordinator kept as %s.',
+      demoMembers.length,
+      removedUsers,
+      BOOTSTRAP_COORDINATOR.username,
+    )
+  }
+  return { removedMembers: demoMembers.length, removedUsers }
+}
+
 /** Remove all roster people and their logins so real data can be imported. */
 export async function wipeRosterAndDemoPeople() {
   await db.exec(`
@@ -249,16 +390,24 @@ export async function seedDatabase({ force = false, demo = false } = {}) {
   await initSchema()
   await ensureDefaultRules()
 
-  const seedDemo = demo || process.env.SEED_DEMO === '1'
+  const production = process.env.NODE_ENV === 'production'
+  const seedDemo = !production && (demo || process.env.SEED_DEMO === '1')
+
+  await purgeSeededDemoPeople()
 
   if (force && !seedDemo) {
     await wipeRosterAndDemoPeople()
+    await seedRealMembers(true)
+    await ensureMemberEmails()
     await seedFinanceDemo()
     return
   }
 
   if (seedDemo) {
     await seedMembers(force)
+    await ensureMemberEmails()
+  } else {
+    await seedRealMembers(force)
     await ensureMemberEmails()
   }
 
@@ -293,6 +442,7 @@ export async function seedDatabase({ force = false, demo = false } = {}) {
       DELETE FROM members;
     `)
     if (seedDemo) await seedMembers(true)
+    else await seedRealMembers(true)
   }
 
   if (!seedDemo) {
@@ -665,7 +815,8 @@ export async function seedFinanceDemo() {
   console.log('Seeded finance demo: payment methods, contribution types, sample submissions.')
 }
 
-if (process.argv[1]?.endsWith('seed.js')) {
+const launchedDirectly = /[/\\]seed\.js$/i.test(process.argv[1] ?? '')
+if (launchedDirectly) {
   const force = process.argv.includes('--force')
   const demo = process.argv.includes('--demo')
   initSchema()
