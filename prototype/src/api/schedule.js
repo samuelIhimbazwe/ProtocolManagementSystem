@@ -56,8 +56,8 @@ export async function fetchRules() {
   return apiFetch('/settings/rules')
 }
 
-export async function saveRules(rules) {
-  return apiFetch('/settings/rules', { method: 'PUT', body: { rules } })
+export async function saveRules(rules, removedDefaultIds = []) {
+  return apiFetch('/settings/rules', { method: 'PUT', body: { rules, removedDefaultIds } })
 }
 
 export async function inviteUser(body) {

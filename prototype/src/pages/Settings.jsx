@@ -1,17 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { KeyRound, ShieldCheck, SlidersHorizontal, UserCircle, Users } from 'lucide-react'
-import { PageHeader, Badge } from '../layouts/AppShell'
+import { KeyRound, UserCircle, Users } from 'lucide-react'
+import { PageHeader } from '../layouts/AppShell'
 import ThemePicker from '../components/ThemePicker'
 import Modal from '../components/Modal'
+import RuleConfigurationPanel from '../components/RuleConfigurationPanel'
 import { useRole } from '../context/RoleContext'
 import { ROLES } from '../data/roles'
-import {
-  RULE_CATEGORIES,
-  DEFAULT_RULE_CONFIGURATION,
-  loadRuleConfiguration,
-  saveRuleConfiguration,
-} from '../data/rules'
 import {
   getSettingsLayout,
   SETTINGS_SECTIONS,
@@ -23,7 +18,6 @@ import {
 } from '../data/settingsByRole'
 import { USE_API } from '../api/config'
 import { changePassword } from '../api/client'
-import { fetchRules, saveRules as saveRulesApi } from '../api/schedule'
 import { useAuth } from '../context/AuthContext'
 
 function ChangePasswordCard({ onToast }) {
@@ -134,12 +128,6 @@ function ChangePasswordCard({ onToast }) {
   )
 }
 
-function severityVariant(severity) {
-  if (severity === 'Error') return 'error'
-  if (severity === 'Warning') return 'warning'
-  return 'neutral'
-}
-
 function SettingsFieldsSection({ title, fields, editable, onEdit }) {
   return (
     <section className="pmss-card p-5">
@@ -166,211 +154,22 @@ function SettingsFieldsSection({ title, fields, editable, onEdit }) {
   )
 }
 
-function RuleConfigurationBlock({
-  rules,
-  filter,
-  setFilter,
-  enabledCount,
-  rulesAccess,
-  ruleCategoryFilter,
-  footnote,
-  onToggle,
-  onEdit,
-  onReset,
-  showValidationLink,
-}) {
-  const categories = ruleCategoryFilter
-    ? ['All', ...RULE_CATEGORIES.filter((c) => ruleCategoryFilter.includes(c))]
-    : ['All', ...RULE_CATEGORIES]
-
-  const filteredRules = useMemo(() => {
-    let list = filter === 'All' ? rules : rules.filter((r) => r.category === filter)
-    if (ruleCategoryFilter) {
-      list = list.filter((r) => ruleCategoryFilter.includes(r.category))
-    }
-    return list
-  }, [rules, filter, ruleCategoryFilter])
-
-  const canEdit = rulesAccess === 'edit'
-
-  return (
-    <section className="pmss-card p-5 mb-6">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
-        <div className="flex gap-3">
-          <div className="p-2.5 rounded-card bg-primary-50 text-primary-600 h-fit">
-            <SlidersHorizontal className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-neutral-900">Rule configuration</h2>
-            <p className="text-sm text-neutral-500 mt-1">
-              Rules used by choir generation, team building, leadership rotation, and schedule validation.
-            </p>
-            <p className="text-xs text-neutral-400 mt-2">
-              {enabledCount} of {rules.length} rules enabled
-              {rulesAccess === 'view' ? ' · View only' : ''}
-            </p>
-          </div>
-        </div>
-        {canEdit && (
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="pmss-btn-secondary text-sm h-9" onClick={onReset}>
-              Reset to defaults
-            </button>
-            {showValidationLink && (
-              <Link
-                to="/scheduling?tab=validation"
-                className="pmss-btn-secondary text-sm h-9 inline-flex items-center gap-2"
-              >
-                <ShieldCheck className="w-4 h-4" /> Run validation
-              </Link>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap gap-2 mb-4">
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            type="button"
-            onClick={() => setFilter(cat)}
-            className={`h-8 px-3 rounded-lg text-xs font-semibold transition-colors ${
-              filter === cat ? 'bg-primary-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      <div className="overflow-x-auto rounded-card border border-neutral-200">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-neutral-50 border-b border-neutral-200">
-              <th className="text-left font-semibold text-neutral-500 px-4 py-3 w-12">On</th>
-              <th className="text-left font-semibold text-neutral-500 px-4 py-3">Rule</th>
-              <th className="text-left font-semibold text-neutral-500 px-4 py-3 hidden md:table-cell">Category</th>
-              <th className="text-left font-semibold text-neutral-500 px-4 py-3 hidden lg:table-cell">Parameter</th>
-              <th className="text-left font-semibold text-neutral-500 px-4 py-3">If broken</th>
-              {canEdit && <th className="w-16 px-4 py-3" />}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredRules.map((rule) => (
-              <tr key={rule.id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50/80">
-                <td className="px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={rule.enabled}
-                    disabled={!canEdit}
-                    onChange={() => onToggle(rule.id)}
-                    className="rounded border-neutral-300 text-primary-600 focus:ring-primary-600 h-4 w-4 disabled:opacity-50"
-                    aria-label={`Enable ${rule.name}`}
-                  />
-                </td>
-                <td className="px-4 py-3">
-                  <p className="font-medium text-neutral-900">{rule.name}</p>
-                  <p className="text-xs text-neutral-500 mt-0.5 max-w-md">{rule.description}</p>
-                  <p className="text-xs text-neutral-600 mt-1 lg:hidden">{rule.parameter}</p>
-                </td>
-                <td className="px-4 py-3 hidden md:table-cell">
-                  <Badge variant="primary">{rule.category}</Badge>
-                </td>
-                <td className="px-4 py-3 hidden lg:table-cell text-neutral-700">{rule.parameter}</td>
-                <td className="px-4 py-3">
-                  <Badge variant={severityVariant(rule.severity)}>{rule.severity}</Badge>
-                </td>
-                {canEdit && (
-                  <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => onEdit(rule)}
-                      className="text-xs font-semibold text-primary-600 hover:text-primary-700"
-                    >
-                      Edit
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {footnote && <p className="text-xs text-neutral-400 mt-3">{footnote}</p>}
-    </section>
-  )
-}
-
 export default function SettingsPage() {
   const { roleId, member, permissions, authUser } = useRole()
   const layout = getSettingsLayout(roleId)
   const roleLabel = ROLES.find((r) => r.id === roleId)?.label ?? 'User'
 
-  const [rules, setRules] = useState(() => loadRuleConfiguration())
-  const [filter, setFilter] = useState('All')
-  const [editRule, setEditRule] = useState(null)
-  const [paramDraft, setParamDraft] = useState('')
   const [toast, setToast] = useState(null)
   const [memberPrefs, setMemberPrefs] = useState(() => loadMemberPrefs())
   const [editMemberSection, setEditMemberSection] = useState(null)
-
-  useEffect(() => {
-    if (!USE_API) return
-    fetchRules()
-      .then((d) => setRules(d.rules ?? []))
-      .catch(() => {})
-  }, [])
-
-  const persistRules = (next) => {
-    setRules(next)
-    if (USE_API && roleId === 'coordinator') {
-      saveRulesApi(next).catch(() => showToast('Could not save rules to server'))
-    } else {
-      saveRuleConfiguration(next)
-    }
-  }
 
   const showToast = (msg) => {
     setToast(msg)
     setTimeout(() => setToast(null), 2600)
   }
 
-  const enabledCount = rules.filter((r) => r.enabled).length
   const showRules = layout.rulesAccess !== 'none'
   const showValidationLink = roleId === 'coordinator' || roleId === 'secretary'
-
-  const toggleRule = (id) => {
-    if (layout.rulesAccess !== 'edit') return
-    setRules((prev) => {
-      const next = prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
-      persistRules(next)
-      return next
-    })
-  }
-
-  const openEditRule = (rule) => {
-    if (layout.rulesAccess !== 'edit') return
-    setEditRule(rule)
-    setParamDraft(rule.parameter)
-  }
-
-  const saveEditRule = () => {
-    if (!editRule) return
-    setRules((prev) => {
-      const next = prev.map((r) => (r.id === editRule.id ? { ...r, parameter: paramDraft.trim() || r.parameter } : r))
-      persistRules(next)
-      return next
-    })
-    showToast(`Updated “${editRule.name}”`)
-    setEditRule(null)
-  }
-
-  const resetRules = () => {
-    const fresh = DEFAULT_RULE_CONFIGURATION.map((r) => ({ ...r }))
-    persistRules(fresh)
-    showToast('Rules reset to defaults')
-  }
 
   const sectionFields = (sectionKey) => {
     if (sectionKey === 'account') {
@@ -442,19 +241,16 @@ export default function SettingsPage() {
       )}
 
       {showRules && (
-        <RuleConfigurationBlock
-          rules={rules}
-          filter={filter}
-          setFilter={setFilter}
-          enabledCount={enabledCount}
-          rulesAccess={layout.rulesAccess}
-          ruleCategoryFilter={layout.ruleCategories}
-          footnote={layout.rulesFootnote}
-          onToggle={toggleRule}
-          onEdit={openEditRule}
-          onReset={resetRules}
-          showValidationLink={showValidationLink}
-        />
+        <div className="mb-6">
+          <RuleConfigurationPanel
+            rulesAccess={layout.rulesAccess}
+            ruleCategoryFilter={layout.ruleCategories}
+            footnote={layout.rulesFootnote}
+            showValidationLink={showValidationLink}
+            title="Rule configuration"
+            description="Rules used by choir generation, team building, leadership rotation, and schedule validation."
+          />
+        </div>
       )}
 
       <div className="space-y-4">
@@ -474,30 +270,6 @@ export default function SettingsPage() {
           )
         })}
       </div>
-
-      <Modal
-        open={!!editRule}
-        onClose={() => setEditRule(null)}
-        title="Edit rule parameter"
-        description={editRule?.name}
-        footer={
-          <>
-            <button type="button" className="pmss-btn-secondary" onClick={() => setEditRule(null)}>
-              Cancel
-            </button>
-            <button type="button" className="pmss-btn-primary" onClick={saveEditRule}>
-              Save
-            </button>
-          </>
-        }
-      >
-        <p className="text-sm text-neutral-600 mb-3">{editRule?.description}</p>
-        <label className="block text-sm font-medium text-neutral-700 mb-1.5">Parameter (display / config)</label>
-        <input className="pmss-input" value={paramDraft} onChange={(e) => setParamDraft(e.target.value)} />
-        <p className="text-xs text-neutral-400 mt-2">
-          Severity when broken: <strong>{editRule?.severity}</strong> (set by ministry policy)
-        </p>
-      </Modal>
 
       <Modal
         open={editMemberSection === 'memberNotifications'}

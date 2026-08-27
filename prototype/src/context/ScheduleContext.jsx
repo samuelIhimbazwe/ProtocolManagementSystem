@@ -28,6 +28,9 @@ const demoPayload = () => ({
   choirAssignments: CHOIR_ASSIGNMENTS,
   teamAssignments: TEAM_ASSIGNMENTS,
   leadershipReview: LEADERSHIP,
+  choirStatus: 'published',
+  choirPublishedAt: '2026-08-01T12:00:00.000Z',
+  choirPublishedBy: 'Choir Scheduler',
   validationRows: VALIDATION_ROWS,
   validationSummary: VALIDATION_SUMMARY,
 })
@@ -37,6 +40,8 @@ export function ScheduleProvider({ children }) {
   const [loading, setLoading] = useState(useApi)
   const [source, setSource] = useState('demo')
   const [editable, setEditable] = useState(false)
+  const [editableChoir, setEditableChoir] = useState(false)
+  const [editableTeams, setEditableTeams] = useState(false)
   const [payload, setPayload] = useState(() => (useApi ? null : demoPayload()))
   const [monthsMeta, setMonthsMeta] = useState(null)
   const [visibility, setVisibility] = useState('public')
@@ -54,6 +59,8 @@ export function ScheduleProvider({ children }) {
     setPayload(payload)
     setSource(data.source)
     setEditable(Boolean(data.editable))
+    setEditableChoir(Boolean(data.editableChoir ?? data.editable))
+    setEditableTeams(Boolean(data.editableTeams ?? data.editable))
     setVisibility(data.visibility ?? (data.source === 'published' ? 'public' : 'draft'))
     setIsPublic(Boolean(data.isPublic))
     setPublishedMeta(data.published ?? null)
@@ -71,6 +78,9 @@ export function ScheduleProvider({ children }) {
     async (monthKey) => {
       if (!USE_API || !isAuthenticated) {
         setPayload(demoPayload())
+        setEditable(true)
+        setEditableChoir(true)
+        setEditableTeams(true)
         setMonthsMeta({
           liveMonthKey: '2026-08',
           nextMonthKey: '2026-09',
@@ -193,6 +203,8 @@ export function ScheduleProvider({ children }) {
       loading,
       source,
       editable,
+      editableChoir,
+      editableTeams,
       payload: payload ?? demoPayload(),
       teamAssignments: (payload ?? demoPayload()).teamAssignments ?? TEAM_ASSIGNMENTS,
       services: (payload ?? demoPayload()).services ?? SERVICES,
@@ -211,6 +223,8 @@ export function ScheduleProvider({ children }) {
       loading,
       source,
       editable,
+      editableChoir,
+      editableTeams,
       payload,
       monthsMeta,
       visibility,

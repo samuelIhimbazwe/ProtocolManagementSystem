@@ -43,6 +43,7 @@ function appRoleFromMemberRole(role) {
     Secretary: 'secretary',
     Treasurer: 'treasurer',
     Coordinator: 'coordinator',
+    'Choir Scheduler': 'choir_scheduler',
     Member: 'member',
   }
   return map[role] ?? 'member'

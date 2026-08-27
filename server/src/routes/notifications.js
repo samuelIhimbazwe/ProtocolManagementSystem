@@ -11,6 +11,7 @@ const router = Router()
 const NOTIFICATION_ACTIONS = new Set([
   'ministry.announcement',
   'schedule.publish',
+  'schedule.choir_publish',
   'schedule.team_assignments',
   'schedule.choir_assignments',
   'schedule.leadership_updated',
@@ -32,6 +33,14 @@ const ACTION_COPY = {
       (meta.versionLabel
         ? `Schedule ${meta.versionLabel} published${meta.monthLabel ? ` for ${meta.monthLabel}` : ''}`
         : 'A new ministry schedule was published'),
+  },
+  'schedule.choir_publish': {
+    title: 'Choir schedule published',
+    body: (meta) =>
+      meta.summary ||
+      (meta.monthLabel
+        ? `Choir schedule published for ${meta.monthLabel} — coordinator can assign protocol teams`
+        : 'Choir schedule was published'),
   },
   'schedule.team_assignments': {
     title: 'Team assignments updated',

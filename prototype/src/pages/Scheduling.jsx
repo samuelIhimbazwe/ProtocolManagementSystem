@@ -20,12 +20,14 @@ import { useSchedule } from '../context/ScheduleContext'
 import { useMembers } from '../context/MembersContext'
 import { isDutyAvailable, serveDaysMapFromMembers } from '../lib/memberAvailability'
 import { USE_API } from '../api/config'
-import { publishSchedule, archiveSchedule, makeScheduleMonthPublic } from '../api/client'
-import { fetchScheduleHistory, saveScheduleDraft } from '../api/schedule'
+import { publishSchedule, archiveSchedule, makeScheduleMonthPublic, publishChoirSchedule } from '../api/client'
+import { fetchScheduleHistory, saveScheduleDraft, validateScheduleDraft } from '../api/schedule'
 import { PUBLISH_INFO, SCHEDULE_HISTORY } from '../data/mock'
 import { normalizeTeam } from '../components/TeamCardActions'
 import ScheduleDownloadMenu from '../components/ScheduleDownloadMenu'
 import Modal from '../components/Modal'
+import RuleConfigurationPanel from '../components/RuleConfigurationPanel'
+import { getSettingsLayout } from '../data/settingsByRole'
 import ChoirScheduleTab from './scheduling/ChoirScheduleTab'
 import ServiceTeamsTab from './scheduling/ServiceTeamsTab'
 import {
@@ -47,11 +49,14 @@ const TABS = [
 ]
 
 export default function SchedulingPage() {
-  const { permissions } = useRole()
+  const { permissions, roleId } = useRole()
+  const rulesLayout = getSettingsLayout(roleId)
   const { members } = useMembers()
   const {
     payload,
     editable,
+    editableChoir,
+    editableTeams,
     updatePayload,
     refresh,
     switchMonth,
@@ -70,9 +75,20 @@ export default function SchedulingPage() {
   const leadership = payload.leadershipReview ?? []
   const validationSummary = payload.validationSummary ?? { passed: 0, warnings: 0, errors: 0, status: 'PENDING' }
   const validationRows = payload.validationRows ?? []
+  const choirPublished =
+    String(payload.choirStatus ?? '') === 'published' ||
+    (payload.choirStatus == null && (payload.choirAssignments?.length ?? 0) > 0)
 
   const visibleTabs = TABS.filter((t) => permissions.schedulingTabs.includes(t.id))
-  const canEdit = permissions.manageSchedule && (USE_API ? editable : true)
+  const apiOpen = USE_API ? editable : true
+  const canEditCalendar =
+    (permissions.manageSchedule || permissions.manageChoirSchedule) && apiOpen
+  const canEditChoir = permissions.manageChoirSchedule && (USE_API ? editableChoir || editable : true)
+  const canPublishChoir = permissions.publishChoirSchedule && (USE_API ? editableChoir || editable : true)
+  const canEditTeams =
+    permissions.manageSchedule && (USE_API ? editableTeams || editable : true) && choirPublished
+  const canEdit = canEditCalendar || canEditChoir || canEditTeams
+  const canFullPublish = permissions.manageSchedule && apiOpen
 
   const teamRows = useMemo(
     () => (payload.teamAssignments ?? []).map((t) => ({ ...normalizeTeam(t), _key: t.serviceId ?? t.date })),
@@ -260,6 +276,9 @@ export default function SchedulingPage() {
       choirAssignments: [],
       teamAssignments: [],
       leadershipReview: [],
+      choirStatus: 'draft',
+      choirPublishedAt: null,
+      choirPublishedBy: null,
       validationRows: [],
       validationSummary: { passed: 0, warnings: 0, errors: 0, status: 'PENDING' },
     }
@@ -307,6 +326,10 @@ export default function SchedulingPage() {
   }
 
   const handlePublish = async () => {
+    if (!choirPublished) {
+      showToast('Choir schedule must be published first')
+      return
+    }
     if (USE_API) {
       setPublishing(true)
       try {
@@ -334,6 +357,39 @@ export default function SchedulingPage() {
     showToast('Schedule published successfully')
     setPublishMeta((prev) => ({ ...prev, status: 'Published' }))
     selectTab('history')
+  }
+
+  const handlePublishChoir = async () => {
+    if (USE_API) {
+      setPublishing(true)
+      try {
+        await flushDraft()
+        await saveScheduleDraft(payload)
+        const monthKey = payload.monthKey || calendarMonth
+        const result = await publishChoirSchedule(monthKey)
+        showToast(`Choir schedule published — coordinator can now build service teams`)
+        updatePayload((p) => ({
+          ...p,
+          ...result.payload,
+          choirStatus: 'published',
+          choirPublishedAt: result.choirPublishedAt,
+          choirPublishedBy: result.choirPublishedBy,
+        }))
+        await refresh(monthKey)
+      } catch (err) {
+        showToast(err.message ?? 'Choir publish failed')
+      } finally {
+        setPublishing(false)
+      }
+      return
+    }
+    updatePayload((p) => ({
+      ...p,
+      choirStatus: 'published',
+      choirPublishedAt: new Date().toISOString(),
+      choirPublishedBy: 'Choir Scheduler',
+    }))
+    showToast('Choir schedule published — coordinator can now build service teams')
   }
 
   const handleArchive = async () => {
@@ -459,7 +515,7 @@ export default function SchedulingPage() {
                 {monthLabelFromKey(liveMonthKey)}
                 <span className="ml-1 text-[10px] uppercase tracking-wide text-neutral-400">Live</span>
               </button>
-              {(canEdit ? nextMonthKeyVal : null) && (
+              {(canEditCalendar || canEditChoir ? nextMonthKeyVal : null) && (
                 <button
                   type="button"
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
@@ -473,25 +529,24 @@ export default function SchedulingPage() {
                   <span className="ml-1 text-[10px] uppercase tracking-wide text-neutral-400">Next</span>
                 </button>
               )}
-              {!canEdit &&
-                visibleMonthOptions
-                  .filter((m) => m.monthKey !== liveMonthKey)
-                  .map((m) => (
-                    <button
-                      key={m.monthKey}
-                      type="button"
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                        calendarMonth === m.monthKey
-                          ? 'bg-white text-primary-800 shadow-sm ring-1 ring-neutral-200/80'
-                          : 'text-neutral-600 hover:text-neutral-900'
-                      }`}
-                      onClick={() => selectMonth(m.monthKey)}
-                    >
-                      {m.monthLabel}
-                    </button>
-                  ))}
+              {visibleMonthOptions
+                .filter((m) => m.monthKey !== liveMonthKey && m.monthKey !== nextMonthKeyVal)
+                .map((m) => (
+                  <button
+                    key={m.monthKey}
+                    type="button"
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                      calendarMonth === m.monthKey
+                        ? 'bg-white text-primary-800 shadow-sm ring-1 ring-neutral-200/80'
+                        : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                    onClick={() => selectMonth(m.monthKey)}
+                  >
+                    {m.monthLabel}
+                  </button>
+                ))}
             </div>
-            {canEdit && (
+            {canEditCalendar && (
               <button
                 type="button"
                 className="pmss-btn-primary"
@@ -501,7 +556,7 @@ export default function SchedulingPage() {
                 <Sparkles className="w-4 h-4" /> Generate monthly calendar
               </button>
             )}
-            {!canEdit && (
+            {!canEditCalendar && (
               <p className="text-sm text-neutral-500">Only schedule editors can generate a new month.</p>
             )}
           </div>
@@ -519,7 +574,7 @@ export default function SchedulingPage() {
             rows={services.filter((s) => !calendarMonth || String(s.date ?? '').startsWith(calendarMonth))}
             emptyTitle="No services for this month"
             emptyDescription={
-              canEdit
+              canEditCalendar
                 ? calendarMonth === nextMonthKeyVal
                   ? `Click Generate monthly calendar to create ${monthLabelFromKey(calendarMonth)} services. Other users will not see this month until you make it public.`
                   : 'Pick a month, then click Generate monthly calendar to create Sunday, Tuesday, Friday, and Igaburo services.'
@@ -530,28 +585,56 @@ export default function SchedulingPage() {
       )}
 
       {tab === 'choir' && (
-        <ChoirScheduleTab
-          canEdit={canEdit}
-          showToast={showToast}
-          controlledAssignments={choirRows}
-          onAssignmentsChange={setChoirRows}
-          services={services}
-          monthLabel={payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? calendarMonth)}
-        />
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Badge variant={choirPublished ? 'success' : 'warning'}>
+              {choirPublished ? 'Choir published' : 'Choir draft'}
+            </Badge>
+            {choirPublished && payload.choirPublishedBy && (
+              <span className="text-neutral-500">
+                by {payload.choirPublishedBy}
+                {payload.choirPublishedAt
+                  ? ` · ${new Date(payload.choirPublishedAt).toLocaleDateString()}`
+                  : ''}
+              </span>
+            )}
+            {!choirPublished && canPublishChoir && (
+              <span className="text-neutral-600">
+                Assign choirs, then publish so the coordinator can build teams.
+              </span>
+            )}
+          </div>
+          <ChoirScheduleTab
+            canEdit={canEditChoir}
+            showToast={showToast}
+            controlledAssignments={choirRows}
+            onAssignmentsChange={setChoirRows}
+            services={services}
+            monthLabel={payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? calendarMonth)}
+          />
+        </div>
       )}
 
       {tab === 'teams' && (
-        <ServiceTeamsTab
-          canEdit={canEdit}
-          showToast={showToast}
-          controlledTeams={teamRows}
-          onTeamsChange={setTeamRows}
-          onTeamsBuilt={applyBuiltTeams}
-          services={services}
-          protocolPool={protocolPool}
-          serveDaysByName={serveDaysByName}
-          monthLabel={payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? calendarMonth)}
-        />
+        <div className="space-y-4">
+          {!choirPublished && (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-card px-4 py-3">
+              Choir schedule is not published yet. The choir scheduler must publish the monthly choir plan
+              before protocol teams can be built.
+            </p>
+          )}
+          <ServiceTeamsTab
+            canEdit={canEditTeams}
+            showToast={showToast}
+            controlledTeams={teamRows}
+            onTeamsChange={setTeamRows}
+            onTeamsBuilt={applyBuiltTeams}
+            services={services}
+            protocolPool={protocolPool}
+            serveDaysByName={serveDaysByName}
+            monthLabel={payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? calendarMonth)}
+          />
+        </div>
       )}
 
       {tab === 'leadership' && (
@@ -576,7 +659,7 @@ export default function SchedulingPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                {canEdit ? (
+                {canEditTeams ? (
                 <>
                 <button type="button" className="pmss-btn-primary text-xs h-9 px-3" onClick={() => approveLeadership(i)}>
                   <Check className="w-3.5 h-3.5" /> Approve
@@ -601,50 +684,108 @@ export default function SchedulingPage() {
       )}
 
       {tab === 'validation' && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Badge variant={validationSummary.status === 'PASS' ? 'success' : validationSummary.errors ? 'error' : 'warning'}>
-              {validationSummary.status}
-            </Badge>
-            <span className="text-sm text-neutral-500">{payload.monthLabel ?? 'August 2026'} schedule validation</span>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="pmss-card p-4 text-center">
-              <p className="text-2xl font-semibold text-emerald-600">{validationSummary.passed}</p>
-              <p className="text-xs text-neutral-500 mt-1">Passed</p>
-            </div>
-            <div className="pmss-card p-4 text-center">
-              <p className="text-2xl font-semibold text-amber-600">{validationSummary.warnings}</p>
-              <p className="text-xs text-neutral-500 mt-1">Warnings</p>
-            </div>
-            <div className="pmss-card p-4 text-center">
-              <p className="text-2xl font-semibold text-red-600">{validationSummary.errors}</p>
-              <p className="text-xs text-neutral-500 mt-1">Errors</p>
-            </div>
-          </div>
-          <DataTable
-            columns={[
-              { key: 'rule', label: 'Rule' },
-              { key: 'issue', label: 'Issue' },
-              {
-                key: 'severity',
-                label: 'Severity',
-                render: (r) => {
-                  const v =
-                    r.severity === 'Error' ? 'error' : r.severity === 'Warning' ? 'warning' : 'success'
-                  return <Badge variant={v}>{r.severity}</Badge>
-                },
-              },
-              { key: 'service', label: 'Service' },
-              { key: 'status', label: 'Status' },
-            ]}
-            rows={validationRows}
-          />
-          {canEdit && (
-          <button type="button" className="pmss-btn-secondary" onClick={() => selectTab('teams')}>
-            Fix issues in Service Teams →
-          </button>
+        <div className="space-y-6">
+          {rulesLayout.rulesAccess !== 'none' && (
+            <RuleConfigurationPanel
+              rulesAccess={rulesLayout.rulesAccess}
+              ruleCategoryFilter={rulesLayout.ruleCategories}
+              footnote={rulesLayout.rulesFootnote}
+              title="Engine rules"
+              description="Enable, edit, add, or remove rules used when validating this schedule."
+              onRulesChanged={async () => {
+                if (!USE_API) return
+                try {
+                  const result = await validateScheduleDraft()
+                  if (result?.rows && result?.summary) {
+                    updatePayload({
+                      validationRows: result.rows,
+                      validationSummary: result.summary,
+                    })
+                  } else {
+                    await refresh?.()
+                  }
+                } catch {
+                  await refresh?.()
+                }
+              }}
+            />
           )}
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <h2 className="font-semibold text-neutral-900">Validation results</h2>
+                <Badge variant={validationSummary.status === 'PASS' ? 'success' : validationSummary.errors ? 'error' : 'warning'}>
+                  {validationSummary.status}
+                </Badge>
+                <span className="text-sm text-neutral-500">{payload.monthLabel ?? 'August 2026'} schedule</span>
+              </div>
+              {USE_API && (
+                <button
+                  type="button"
+                  className="pmss-btn-secondary text-sm h-9 inline-flex items-center gap-1.5"
+                  onClick={async () => {
+                    try {
+                      const result = await validateScheduleDraft()
+                      if (result?.rows && result?.summary) {
+                        updatePayload({
+                          validationRows: result.rows,
+                          validationSummary: result.summary,
+                        })
+                      }
+                      showToast('Validation refreshed')
+                    } catch (err) {
+                      showToast(err.message ?? 'Could not refresh validation')
+                    }
+                  }}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Re-run
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="pmss-card p-4 text-center">
+                <p className="text-2xl font-semibold text-emerald-600">{validationSummary.passed}</p>
+                <p className="text-xs text-neutral-500 mt-1">Passed</p>
+              </div>
+              <div className="pmss-card p-4 text-center">
+                <p className="text-2xl font-semibold text-amber-600">{validationSummary.warnings}</p>
+                <p className="text-xs text-neutral-500 mt-1">Warnings</p>
+              </div>
+              <div className="pmss-card p-4 text-center">
+                <p className="text-2xl font-semibold text-red-600">{validationSummary.errors}</p>
+                <p className="text-xs text-neutral-500 mt-1">Errors</p>
+              </div>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'rule', label: 'Rule' },
+                { key: 'issue', label: 'Issue' },
+                {
+                  key: 'severity',
+                  label: 'Severity',
+                  render: (r) => {
+                    const v =
+                      r.severity === 'Error' ? 'error' : r.severity === 'Warning' ? 'warning' : 'success'
+                    return <Badge variant={v}>{r.severity}</Badge>
+                  },
+                },
+                { key: 'service', label: 'Service' },
+                { key: 'status', label: 'Status' },
+              ]}
+              rows={validationRows}
+            />
+            {canEditTeams && (
+              <button type="button" className="pmss-btn-secondary" onClick={() => selectTab('teams')}>
+                Fix issues in Service Teams →
+              </button>
+            )}
+            {canEditChoir && !canEditTeams && (
+              <button type="button" className="pmss-btn-secondary" onClick={() => selectTab('choir')}>
+                Fix issues in Choir Schedule →
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -653,8 +794,9 @@ export default function SchedulingPage() {
           <div className="lg:col-span-2 pmss-card p-5">
             <h2 className="font-semibold mb-2">Schedule preview</h2>
             <p className="text-sm text-neutral-500 mb-4">
-              {payload.monthLabel ?? monthLabelFromKey(calendarMonth)} — {services.length} services, choir &
-              protocol teams assigned
+              {payload.monthLabel ?? monthLabelFromKey(calendarMonth)} — {services.length} services
+              {choirPublished ? ', choir published' : ', choir still draft'}
+              {(payload.teamAssignments ?? []).length ? ', protocol teams assigned' : ''}
             </p>
             <div className="border border-neutral-200 rounded-card p-4 bg-neutral-50 text-sm space-y-2 max-h-64 overflow-auto">
               {services.map((s) => (
@@ -694,16 +836,49 @@ export default function SchedulingPage() {
               <p className="text-xs text-neutral-500">Published date</p>
               <p className="text-sm font-medium">{publishMeta.publishedDate}</p>
             </div>
-            {canEdit ? (
+            <div>
+              <p className="text-xs text-neutral-500">Choir schedule</p>
+              <Badge variant={choirPublished ? 'success' : 'warning'}>
+                {choirPublished ? 'Published' : 'Draft'}
+              </Badge>
+              {choirPublished && payload.choirPublishedBy && (
+                <p className="text-xs text-neutral-500 mt-1">by {payload.choirPublishedBy}</p>
+              )}
+            </div>
+            {canPublishChoir ? (
+              <>
+                <button
+                  type="button"
+                  className="pmss-btn-primary w-full"
+                  onClick={handlePublishChoir}
+                  disabled={publishing || !services.length || choirPublished}
+                >
+                  {publishing
+                    ? 'Publishing choir…'
+                    : choirPublished
+                      ? 'Choir schedule published'
+                      : 'Publish choir schedule'}
+                </button>
+                <p className="text-xs text-neutral-500">
+                  Publishing the choir plan unlocks protocol team assignment for the coordinator.
+                </p>
+              </>
+            ) : null}
+            {canFullPublish ? (
               <>
                 <button
                   type="button"
                   className="pmss-btn-primary w-full"
                   onClick={handlePublish}
-                  disabled={publishing || !services.length}
+                  disabled={publishing || !services.length || !choirPublished}
                 >
-                  {publishing ? 'Publishing…' : 'Publish schedule'}
+                  {publishing ? 'Publishing…' : 'Publish full schedule'}
                 </button>
+                {!choirPublished && (
+                  <p className="text-xs text-amber-700">
+                    Waiting for the choir scheduler to publish the choir plan.
+                  </p>
+                )}
                 {publishedMeta && !isPublic && (
                   <button
                     type="button"

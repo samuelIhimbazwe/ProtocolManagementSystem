@@ -47,7 +47,18 @@ export function emptyMonthPayload(monthKey) {
     choirAssignments: [],
     teamAssignments: [],
     leadershipReview: [],
+    /** draft | published — choir scheduler publishes choirs before coordinator builds teams */
+    choirStatus: 'draft',
+    choirPublishedAt: null,
+    choirPublishedBy: null,
     validationRows: [],
     validationSummary: { passed: 0, warnings: 0, errors: 0, status: 'PENDING' },
   }
+}
+
+export function isChoirPublished(payload) {
+  if (String(payload?.choirStatus ?? '') === 'published') return true
+  // Legacy months (before choir_scheduler role): choirs already filled without status
+  if (payload?.choirStatus == null && (payload?.choirAssignments?.length ?? 0) > 0) return true
+  return false
 }

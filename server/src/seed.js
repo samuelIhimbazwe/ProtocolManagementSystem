@@ -254,6 +254,51 @@ export async function ensureBootstrapCoordinator() {
     )
 }
 
+/** Temporary demo login for choir scheduling tests — replace with the real person later. */
+export const DEMO_CHOIR_SCHEDULER = {
+  username: 'c.scheduler',
+  email: 'c.scheduler@church.internal',
+  displayName: 'Demo Choir Scheduler',
+  password: 'ChoirDemo@2026',
+}
+
+export async function ensureDemoChoirScheduler() {
+  const hash = await bcrypt.hash(DEMO_CHOIR_SCHEDULER.password, 10)
+  const existing = await db
+    .prepare(`SELECT * FROM users WHERE username = ? COLLATE NOCASE`)
+    .get(DEMO_CHOIR_SCHEDULER.username)
+
+  if (!existing) {
+    await db
+      .prepare(
+        `INSERT INTO users (id, username, email, password_hash, member_id, display_name, app_role, status)
+         VALUES (?, ?, ?, ?, NULL, ?, 'choir_scheduler', 'Active')`,
+      )
+      .run(
+        uuid(),
+        DEMO_CHOIR_SCHEDULER.username,
+        DEMO_CHOIR_SCHEDULER.email,
+        hash,
+        DEMO_CHOIR_SCHEDULER.displayName,
+      )
+    console.log('Demo choir scheduler: %s', DEMO_CHOIR_SCHEDULER.username)
+    return
+  }
+
+  await db
+    .prepare(
+      `UPDATE users SET
+        email = ?, password_hash = ?, display_name = ?, app_role = 'choir_scheduler', status = 'Active'
+       WHERE id = ?`,
+    )
+    .run(
+      DEMO_CHOIR_SCHEDULER.email,
+      hash,
+      DEMO_CHOIR_SCHEDULER.displayName,
+      existing.id,
+    )
+}
+
 function demoPersonNameSet() {
   return new Set([
     ...ADMIN_ROSTER.map((a) => a.name),
@@ -414,6 +459,7 @@ export async function seedDatabase({ force = false, demo = false } = {}) {
   const userCount = (await db.prepare(`SELECT COUNT(*) AS c FROM users`).get()).c
   if (userCount > 0 && !force) {
     await ensureBootstrapCoordinator()
+    await ensureDemoChoirScheduler()
     await seedFinanceDemo()
     if (seedDemo) {
       await ensureRegularMemberDemo()
@@ -447,6 +493,7 @@ export async function seedDatabase({ force = false, demo = false } = {}) {
 
   if (!seedDemo) {
     await ensureBootstrapCoordinator()
+    await ensureDemoChoirScheduler()
     await seedFinanceDemo()
     return
   }

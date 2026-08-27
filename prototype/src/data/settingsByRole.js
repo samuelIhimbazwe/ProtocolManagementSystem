@@ -98,7 +98,7 @@ export const ROLE_SETTINGS_LAYOUT = {
     ruleCategories: null,
     sections: ['service', 'team', 'assignments', 'leadership', 'notifications', 'system'],
     editableSections: ['service', 'team', 'assignments', 'leadership', 'notifications', 'system'],
-    rulesFootnote: 'You can enable, disable, and edit rule parameters.',
+    rulesFootnote: 'You can enable, disable, add, edit, and remove rules.',
   },
   president: {
     description: 'Oversight settings — review rules and governance (view only)',
@@ -139,6 +139,14 @@ export const ROLE_SETTINGS_LAYOUT = {
     sections: ['account', 'memberNotifications', 'display'],
     editableSections: ['memberNotifications', 'display'],
     rulesFootnote: null,
+  },
+  choir_scheduler: {
+    description: 'Choir scheduling — monthly choir assignments and choir publish',
+    rulesAccess: 'edit',
+    ruleCategories: ['Choir'],
+    sections: ['service', 'notifications', 'system'],
+    editableSections: [],
+    rulesFootnote: 'You manage choir engine rules — add, edit, remove, and enable/disable.',
   },
 }
 

@@ -14,6 +14,9 @@ import {
   joinChoirList,
   parseChoirList,
   regenerateChoirsForService,
+  siblingSundayChoirs,
+  sundayDayChoirs,
+  exclusiveSundayPartners,
 } from '../../components/ChoirCardActions'
 import { CHOIRS } from '../../data/mock'
 import {
@@ -109,7 +112,11 @@ export default function ChoirScheduleTab({
 
   const regenerateRow = (index) => {
     const row = assignments[index]
-    const choirs = regenerateChoirsForService(row.service, CHOIRS)
+    const dayChoirs = sundayDayChoirs(assignments, row).filter(
+      (c) => !parseChoirList(row.choirs).includes(c),
+    )
+    const exclude = [...dayChoirs, ...exclusiveSundayPartners(dayChoirs)]
+    const choirs = regenerateChoirsForService(row.service, CHOIRS, { exclude })
     patchAssignment(index, { choirs })
     showToast(`Regenerated choirs for ${row.service} (${row.date})`)
   }
@@ -125,6 +132,18 @@ export default function ChoirScheduleTab({
     if (list.includes(addChoirPick)) {
       showToast(`${addChoirPick} is already on this service`)
       return
+    }
+    const dayChoirs = sundayDayChoirs(assignments, assignments[modal.index])
+    if (exclusiveSundayPartners(dayChoirs).includes(addChoirPick)) {
+      showToast(
+        `Manual override: Beulah and Yerusalemu cannot share the same Sunday — fix before publish`,
+      )
+    }
+    const sibling = siblingSundayChoirs(assignments, assignments[modal.index])
+    if (sibling.includes(addChoirPick)) {
+      showToast(
+        `Manual override: ${addChoirPick} is also on the other Sunday service that day — fix before publish`,
+      )
     }
     patchAssignment(modal.index, { choirs: joinChoirList([...list, addChoirPick]) })
     showToast(`Added ${addChoirPick}`)
@@ -152,6 +171,18 @@ export default function ChoirScheduleTab({
     if (list.includes(replaceTo)) {
       showToast(`${replaceTo} is already on this service`)
       return
+    }
+    const dayChoirs = sundayDayChoirs(assignments, assignments[modal.index]).filter((c) => c !== replaceFrom)
+    if (exclusiveSundayPartners(dayChoirs).includes(replaceTo)) {
+      showToast(
+        `Manual override: Beulah and Yerusalemu cannot share the same Sunday — fix before publish`,
+      )
+    }
+    const sibling = siblingSundayChoirs(assignments, assignments[modal.index])
+    if (sibling.includes(replaceTo)) {
+      showToast(
+        `Manual override: ${replaceTo} is also on the other Sunday service that day — fix before publish`,
+      )
     }
     list[idx] = replaceTo
     patchAssignment(modal.index, { choirs: joinChoirList(list) })

@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid'
 import { db, audit } from '../db.js'
 import { authMiddleware } from '../middleware/auth.js'
 import { loadRulesFromDb } from '../lib/settingsStore.js'
-import { validateSchedulePayload, publishBlocked } from '../lib/validation.js'
+import { validateSchedulePayload, publishBlocked, validateChoirPayload } from '../lib/validation.js'
 import { sanitizeTeamAssignments } from '../lib/teamEngine.js'
 import { serveDaysMapFromMembers } from '../lib/memberAvailability.js'
 import { protocolNamePool } from '../pilotData.js'
@@ -18,11 +18,21 @@ import {
   getLiveMonthKey,
   monthLabelFromKey,
   nextMonthKey,
+  isChoirPublished,
 } from '../lib/scheduleMonths.js'
 
 const router = Router()
 
-const EDIT_ROLES = new Set(['coordinator', 'secretary'])
+/** Can open drafts / see private months */
+const DRAFT_ACCESS_ROLES = new Set(['coordinator', 'secretary', 'choir_scheduler'])
+/** Can edit calendar, teams, leadership, full publish */
+const TEAM_EDIT_ROLES = new Set(['coordinator', 'secretary'])
+/** Can edit choir assignments */
+const CHOIR_EDIT_ROLES = new Set(['choir_scheduler'])
+/** Can publish the choir schedule (choir scheduler only) */
+const CHOIR_PUBLISH_ROLES = new Set(['choir_scheduler'])
+/** Legacy alias used by months catalog */
+const EDIT_ROLES = DRAFT_ACCESS_ROLES
 
 function parsePayload(row) {
   return JSON.parse(row.payload_json)
@@ -30,6 +40,15 @@ function parsePayload(row) {
 
 function rowIsPublic(row) {
   return Boolean(row?.is_public)
+}
+
+function normalizeChoirMeta(payload) {
+  return {
+    ...payload,
+    choirStatus: payload.choirStatus === 'published' ? 'published' : 'draft',
+    choirPublishedAt: payload.choirPublishedAt ?? null,
+    choirPublishedBy: payload.choirPublishedBy ?? null,
+  }
 }
 
 async function attachValidation(payload) {
@@ -51,7 +70,7 @@ async function attachValidation(payload) {
       vtl: t.viceTeamLeader,
       status: payload.leadershipReview?.[i]?.status ?? (i < 3 ? 'Approved' : 'Pending approval'),
     }))
-  const sanitized = { ...payload, teamAssignments, leadershipReview }
+  const sanitized = normalizeChoirMeta({ ...payload, teamAssignments, leadershipReview })
   const { rows, summary } = validateSchedulePayload(sanitized, rules, { memberByName, serveDaysByName })
   return { ...sanitized, validationRows: rows, validationSummary: summary }
 }
@@ -118,13 +137,20 @@ async function buildMonthsCatalog(canEdit) {
 }
 
 router.get('/months', authMiddleware, async (req, res) => {
-  const canEdit = EDIT_ROLES.has(req.auth.role)
+  const canEdit = DRAFT_ACCESS_ROLES.has(req.auth.role)
   const catalog = await buildMonthsCatalog(canEdit)
-  return res.json({ ...catalog, canEdit })
+  return res.json({
+    ...catalog,
+    canEdit,
+    canEditChoir: CHOIR_EDIT_ROLES.has(req.auth.role),
+    canEditTeams: TEAM_EDIT_ROLES.has(req.auth.role),
+  })
 })
 
 router.get('/current', authMiddleware, async (req, res) => {
-  const canEdit = EDIT_ROLES.has(req.auth.role)
+  const canEdit = DRAFT_ACCESS_ROLES.has(req.auth.role)
+  const canEditChoir = CHOIR_EDIT_ROLES.has(req.auth.role)
+  const canEditTeams = TEAM_EDIT_ROLES.has(req.auth.role)
   const live = getLiveMonthKey()
   const requested = resolveMonthKey(req) || live
   const catalog = await buildMonthsCatalog(canEdit)
@@ -137,6 +163,8 @@ router.get('/current', authMiddleware, async (req, res) => {
       return res.json({
         source: 'empty',
         editable: true,
+        editableChoir: canEditChoir,
+        editableTeams: canEditTeams,
         id: null,
         monthKey: requested,
         versionLabel: null,
@@ -153,6 +181,8 @@ router.get('/current', authMiddleware, async (req, res) => {
     return res.json({
       source: 'draft',
       editable: true,
+      editableChoir: canEditChoir,
+      editableTeams: canEditTeams,
       id: draft.id,
       monthKey: draft.month_key,
       versionLabel: draft.version_label,
@@ -179,6 +209,8 @@ router.get('/current', authMiddleware, async (req, res) => {
     return res.json({
       source: 'published',
       editable: false,
+      editableChoir: false,
+      editableTeams: false,
       id: published.id,
       monthKey: published.month_key,
       versionLabel: published.version_label,
@@ -199,6 +231,8 @@ router.get('/current', authMiddleware, async (req, res) => {
       return res.json({
         source: 'published',
         editable: false,
+        editableChoir: false,
+        editableTeams: false,
         id: livePub.id,
         monthKey: livePub.month_key,
         versionLabel: livePub.version_label,
@@ -217,7 +251,7 @@ router.get('/current', authMiddleware, async (req, res) => {
 })
 
 router.get('/draft', authMiddleware, async (req, res) => {
-  if (!EDIT_ROLES.has(req.auth.role)) {
+  if (!DRAFT_ACCESS_ROLES.has(req.auth.role)) {
     return res.status(403).json({ error: 'Forbidden' })
   }
   const monthKey = resolveMonthKey(req) || getLiveMonthKey()
@@ -235,9 +269,14 @@ router.get('/draft', authMiddleware, async (req, res) => {
 })
 
 router.put('/draft', authMiddleware, async (req, res) => {
-  if (!EDIT_ROLES.has(req.auth.role)) {
+  if (!DRAFT_ACCESS_ROLES.has(req.auth.role)) {
     return res.status(403).json({ error: 'Forbidden' })
   }
+
+  const role = req.auth.role
+  const choirOnly = role === 'choir_scheduler'
+  const canTeams = TEAM_EDIT_ROLES.has(role)
+  const canChoir = CHOIR_EDIT_ROLES.has(role)
 
   const { payload } = req.body ?? {}
   if (!payload || typeof payload !== 'object') {
@@ -249,14 +288,65 @@ router.put('/draft', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'Valid monthKey (YYYY-MM) required' })
   }
 
-  const validated = await attachValidation({
-    ...payload,
-    monthKey,
-    monthLabel: monthLabelFromKey(monthKey),
-  })
-
   let draft = await getDraftRow(monthKey)
-  const previous = draft ? parsePayload(draft) : emptyMonthPayload(monthKey)
+  const previous = draft ? normalizeChoirMeta(parsePayload(draft)) : emptyMonthPayload(monthKey)
+
+  let merged
+  if (choirOnly) {
+    const servicesChanged =
+      JSON.stringify(previous.services ?? []) !== JSON.stringify(payload.services ?? [])
+    const choirChanged =
+      JSON.stringify(previous.choirAssignments ?? []) !== JSON.stringify(payload.choirAssignments ?? [])
+    merged = {
+      ...previous,
+      services: payload.services ?? previous.services,
+      choirAssignments: canChoir
+        ? (payload.choirAssignments ?? previous.choirAssignments)
+        : previous.choirAssignments,
+      monthKey,
+      monthLabel: monthLabelFromKey(monthKey),
+    }
+    // Regenerating the month calendar resets choir + teams so the month stays ordered
+    if (servicesChanged) {
+      merged.choirAssignments = payload.choirAssignments ?? []
+      merged.teamAssignments = []
+      merged.leadershipReview = []
+      merged.choirStatus = 'draft'
+      merged.choirPublishedAt = null
+      merged.choirPublishedBy = null
+    } else if (choirChanged && isChoirPublished(previous)) {
+      merged.choirStatus = 'draft'
+      merged.choirPublishedAt = null
+      merged.choirPublishedBy = null
+    }
+  } else {
+    merged = {
+      ...previous,
+      ...payload,
+      monthKey,
+      monthLabel: monthLabelFromKey(monthKey),
+      choirStatus: previous.choirStatus,
+      choirPublishedAt: previous.choirPublishedAt,
+      choirPublishedBy: previous.choirPublishedBy,
+    }
+    if (!canChoir) {
+      merged.choirAssignments = previous.choirAssignments
+    } else if (
+      JSON.stringify(previous.choirAssignments ?? []) !== JSON.stringify(payload.choirAssignments ?? []) &&
+      isChoirPublished(previous)
+    ) {
+      merged.choirStatus = 'draft'
+      merged.choirPublishedAt = null
+      merged.choirPublishedBy = null
+    }
+    if (!canTeams) {
+      merged.teamAssignments = previous.teamAssignments
+      merged.leadershipReview = previous.leadershipReview
+      merged.services = previous.services
+    }
+  }
+
+  const validated = await attachValidation(merged)
 
   if (!draft) {
     const id = uuid()
@@ -276,7 +366,7 @@ router.put('/draft', authMiddleware, async (req, res) => {
   const monthLabel = validated.monthLabel || monthKey
   const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
-  if (!same(previous.teamAssignments, validated.teamAssignments)) {
+  if (canTeams && !same(previous.teamAssignments, validated.teamAssignments)) {
     await audit('schedule.team_assignments', req.auth.sub, {
       monthKey,
       monthLabel,
@@ -284,7 +374,7 @@ router.put('/draft', authMiddleware, async (req, res) => {
       summary: `Service teams updated for ${monthLabel}`,
     })
   }
-  if (!same(previous.choirAssignments, validated.choirAssignments)) {
+  if (canChoir && !same(previous.choirAssignments, validated.choirAssignments)) {
     await audit('schedule.choir_assignments', req.auth.sub, {
       monthKey,
       monthLabel,
@@ -292,7 +382,7 @@ router.put('/draft', authMiddleware, async (req, res) => {
       summary: `Choir schedule updated for ${monthLabel}`,
     })
   }
-  if (!same(previous.leadershipReview, validated.leadershipReview)) {
+  if (canTeams && !same(previous.leadershipReview, validated.leadershipReview)) {
     const nextLead = validated.leadershipReview ?? []
     const approved =
       nextLead.length > 0 && nextLead.every((r) => /approv/i.test(String(r.status ?? '')))
@@ -319,6 +409,58 @@ router.get('/validate', authMiddleware, async (req, res) => {
   return res.json({ rows: validated.validationRows, summary: validated.validationSummary })
 })
 
+router.post('/publish-choir', authMiddleware, async (req, res) => {
+  if (!CHOIR_PUBLISH_ROLES.has(req.auth.role)) {
+    return res.status(403).json({ error: 'Only the choir scheduler can publish the choir schedule' })
+  }
+
+  const monthKey = resolveMonthKey(req) || req.body?.monthKey || getLiveMonthKey()
+  const draft = await getDraftRow(monthKey)
+  if (!draft) {
+    return res.status(404).json({ error: 'No draft schedule for this month' })
+  }
+
+  const rules = await loadRulesFromDb()
+  const previous = normalizeChoirMeta(parsePayload(draft))
+  const choirValidation = validateChoirPayload(previous, rules)
+  if (choirValidation.summary.errors > 0) {
+    return res.status(400).json({
+      error: 'Choir publish blocked — fix choir validation errors first',
+      validationSummary: choirValidation.summary,
+      validationRows: choirValidation.rows,
+    })
+  }
+
+  const publisher = await db.prepare(`SELECT display_name FROM users WHERE id = ?`).get(req.auth.sub)
+  const publishedPayload = {
+    ...previous,
+    choirStatus: 'published',
+    choirPublishedAt: new Date().toISOString(),
+    choirPublishedBy: publisher?.display_name ?? 'Choir Scheduler',
+  }
+  const validated = await attachValidation(publishedPayload)
+
+  await db
+    .prepare(`UPDATE schedule_versions SET payload_json = ? WHERE id = ?`)
+    .run(JSON.stringify(validated), draft.id)
+
+  await audit('schedule.choir_publish', req.auth.sub, {
+    monthKey,
+    monthLabel: validated.monthLabel || monthKey,
+    choirs: validated.choirAssignments?.length ?? 0,
+    summary: `Choir schedule published for ${validated.monthLabel || monthKey}`,
+  })
+
+  return res.json({
+    ok: true,
+    monthKey,
+    payload: validated,
+    choirStatus: 'published',
+    choirPublishedAt: validated.choirPublishedAt,
+    choirPublishedBy: validated.choirPublishedBy,
+  })
+})
+
 router.post('/publish', authMiddleware, async (req, res) => {
   if (req.auth.role !== 'coordinator') {
     return res.status(403).json({ error: 'Only coordinator can publish' })
@@ -332,7 +474,12 @@ router.post('/publish', authMiddleware, async (req, res) => {
   }
 
   const rules = await loadRulesFromDb()
-  const payload = parsePayload(draft)
+  const payload = normalizeChoirMeta(parsePayload(draft))
+  if (!isChoirPublished(payload)) {
+    return res.status(400).json({
+      error: 'Publish blocked — choir schedule must be published first by the choir scheduler',
+    })
+  }
   const validated = await attachValidation(payload)
   const validation = { rows: validated.validationRows, summary: validated.validationSummary }
   if (publishBlocked(validation.summary, rules)) {

@@ -98,6 +98,13 @@ export async function publishSchedule(monthKey) {
   })
 }
 
+export async function publishChoirSchedule(monthKey) {
+  return apiFetch('/schedules/publish-choir', {
+    method: 'POST',
+    body: monthKey ? { monthKey } : {},
+  })
+}
+
 export async function archiveSchedule(monthKey) {
   return apiFetch('/schedules/archive', {
     method: 'POST',

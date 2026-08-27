@@ -393,6 +393,7 @@ export const ROLE_LABELS = {
   secretary: 'Secretary',
   treasurer: 'Treasurer',
   coordinator: 'Coordinator',
+  choir_scheduler: 'Choir Scheduler',
   member: 'Member',
   team_duty: 'Team Leader / VTL',
   tl: 'TL',

@@ -1,4 +1,5 @@
-/** Scheduling & validation rules — editable in Settings → Rule configuration */
+/** Scheduling & validation rules — editable in Validation tab and Settings */
+
 export const RULE_CATEGORIES = ['Choir', 'Service team', 'Leadership', 'Attendance', 'Schedule']
 
 export const DEFAULT_RULE_CONFIGURATION = [
@@ -10,6 +11,26 @@ export const DEFAULT_RULE_CONFIGURATION = [
     severity: 'Error',
     enabled: true,
     parameter: 'Required choir: Hope Choir',
+  },
+  {
+    id: 'no-ss1-ss2-overlap',
+    category: 'Choir',
+    name: 'No shared choir on SS1 and SS2',
+    description:
+      'The same choir must not serve Sunday Service 1 and Sunday Service 2 on the same day. Auto-generation never breaks this; manual edits may, but publish is blocked until fixed.',
+    severity: 'Error',
+    enabled: true,
+    parameter: 'Same-day SS1 ∩ SS2: empty',
+  },
+  {
+    id: 'no-beulah-yerusalemu-sunday',
+    category: 'Choir',
+    name: 'Beulah and Yerusalemu not same Sunday',
+    description:
+      'Beulah Choir and Yerusalemu Choir must never both sing on the same Sunday (across Service 1 and 2). Auto-generation never breaks this.',
+    severity: 'Error',
+    enabled: true,
+    parameter: 'Beulah ∩ Yerusalemu on same Sunday: empty',
   },
   {
     id: 'choir-rotation',
@@ -64,6 +85,24 @@ export const DEFAULT_RULE_CONFIGURATION = [
     severity: 'Error',
     enabled: true,
     parameter: 'Friday teams: none',
+  },
+  {
+    id: 'member-availability',
+    category: 'Service team',
+    name: 'Member duty availability',
+    description: 'Sick, pregnant, on leave, or otherwise unavailable members must not appear on protocol teams.',
+    severity: 'Error',
+    enabled: true,
+    parameter: 'Unavailable members: none on teams',
+  },
+  {
+    id: 'serve-days-match',
+    category: 'Service team',
+    name: 'Serve days match service type',
+    description: 'Tuesday-only members appear on Tuesday teams only; other serve-day constraints must hold.',
+    severity: 'Error',
+    enabled: true,
+    parameter: 'Serve days match service',
   },
   {
     id: 'min-team-size',
@@ -139,6 +178,30 @@ export const DEFAULT_RULE_CONFIGURATION = [
   },
 ]
 
+export const BUILTIN_RULE_IDS = new Set(DEFAULT_RULE_CONFIGURATION.map((r) => r.id))
+
+export function isBuiltinRuleId(id) {
+  return BUILTIN_RULE_IDS.has(id)
+}
+
+export function createCustomRule({ name, category, description, severity, parameter, enabled }) {
+  const slug = String(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40)
+  return {
+    id: `custom-${slug || 'rule'}-${Date.now().toString(36)}`,
+    category: category || 'Schedule',
+    name,
+    description: description || '',
+    severity: severity === 'Error' ? 'Error' : 'Warning',
+    enabled: enabled !== false,
+    parameter: parameter || '—',
+    custom: true,
+  }
+}
+
 export const RULE_STORAGE_KEY = 'pmss-rule-config'
 
 export function loadRuleConfiguration() {
@@ -146,21 +209,60 @@ export function loadRuleConfiguration() {
     const raw = localStorage.getItem(RULE_STORAGE_KEY)
     if (!raw) return DEFAULT_RULE_CONFIGURATION.map((r) => ({ ...r }))
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return DEFAULT_RULE_CONFIGURATION.map((r) => ({ ...r }))
-    return DEFAULT_RULE_CONFIGURATION.map((def) => {
-      const saved = parsed.find((p) => p.id === def.id)
-      return saved ? { ...def, ...saved } : { ...def }
-    })
+    const list = Array.isArray(parsed) ? parsed : parsed?.rules
+    const removedDefaultIds = Array.isArray(parsed?.removedDefaultIds) ? parsed.removedDefaultIds : []
+    if (!Array.isArray(list)) return DEFAULT_RULE_CONFIGURATION.map((r) => ({ ...r }))
+    return mergeClientRules(list, removedDefaultIds)
   } catch {
     return DEFAULT_RULE_CONFIGURATION.map((r) => ({ ...r }))
   }
 }
 
-export function saveRuleConfiguration(rules) {
+export function mergeClientRules(stored, removedDefaultIds = []) {
+  const removed = new Set(removedDefaultIds)
+  const byId = new Map((stored ?? []).map((r) => [r.id, r]))
+  const merged = []
+  for (const s of stored ?? []) {
+    const def = DEFAULT_RULE_CONFIGURATION.find((d) => d.id === s.id)
+    if (def) {
+      if (removed.has(s.id)) continue
+      merged.push({ ...def, ...s, custom: false })
+    } else {
+      merged.push({
+        id: s.id,
+        category: s.category || 'Schedule',
+        name: s.name || s.id,
+        description: s.description || '',
+        severity: s.severity === 'Error' ? 'Error' : 'Warning',
+        enabled: s.enabled !== false,
+        parameter: s.parameter || '—',
+        custom: true,
+      })
+    }
+  }
+  for (const def of DEFAULT_RULE_CONFIGURATION) {
+    if (!byId.has(def.id) && !removed.has(def.id)) merged.push({ ...def })
+  }
+  return merged
+}
+
+export function saveRuleConfiguration(rules, removedDefaultIds = []) {
   try {
     localStorage.setItem(
       RULE_STORAGE_KEY,
-      JSON.stringify(rules.map(({ id, enabled, parameter }) => ({ id, enabled, parameter }))),
+      JSON.stringify({
+        rules: rules.map((r) => ({
+          id: r.id,
+          enabled: r.enabled,
+          parameter: r.parameter,
+          name: r.name,
+          category: r.category,
+          description: r.description,
+          severity: r.severity,
+          custom: !!r.custom,
+        })),
+        removedDefaultIds,
+      }),
     )
   } catch {
     /* ignore */

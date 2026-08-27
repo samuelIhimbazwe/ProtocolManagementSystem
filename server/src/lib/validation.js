@@ -12,6 +12,17 @@ function formatDateLabel(isoDate) {
   return `${String(d.getUTCDate()).padStart(2, '0')} ${months[d.getUTCMonth()]}`
 }
 
+function parseChoirNames(choirs) {
+  return String(choirs ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function sundayPairKey(row) {
+  return String(row.serviceDate ?? row.date ?? '')
+}
+
 export function validateSchedulePayload(payload, rules, { memberByName, serveDaysByName } = {}) {
   const rows = []
   const services = payload.services ?? []
@@ -41,6 +52,60 @@ export function validateSchedulePayload(payload, rules, { memberByName, serveDay
       severity: ok ? 'Passed' : 'Error',
       service: 'All SS1',
       status: ok ? 'Resolved' : 'Open',
+    })
+  }
+
+  if (ruleMap['no-ss1-ss2-overlap']?.enabled) {
+    const overlaps = []
+    const byDay = new Map()
+    for (const row of choirs) {
+      if (row.service !== 'Sunday Service 1' && row.service !== 'Sunday Service 2') continue
+      const key = sundayPairKey(row)
+      if (!byDay.has(key)) byDay.set(key, {})
+      byDay.get(key)[row.service] = parseChoirNames(row.choirs)
+    }
+    for (const [day, pair] of byDay) {
+      const a = pair['Sunday Service 1'] ?? []
+      const b = pair['Sunday Service 2'] ?? []
+      if (!a.length || !b.length) continue
+      const shared = a.filter((c) => b.includes(c))
+      if (shared.length) overlaps.push(`${day}: ${shared.join(', ')}`)
+    }
+    rows.push({
+      rule: 'No shared choir on SS1 and SS2',
+      issue:
+        overlaps.length === 0
+          ? 'No choir appears on both Sunday Service 1 and 2 on the same day'
+          : `Same choir on SS1 and SS2: ${overlaps.slice(0, 4).join('; ')}${overlaps.length > 4 ? '…' : ''}`,
+      severity: overlaps.length === 0 ? 'Passed' : 'Error',
+      service: 'Sunday pairs',
+      status: overlaps.length === 0 ? 'Resolved' : 'Open',
+    })
+  }
+
+  if (ruleMap['no-beulah-yerusalemu-sunday']?.enabled) {
+    const conflicts = []
+    const byDay = new Map()
+    for (const row of choirs) {
+      if (row.service !== 'Sunday Service 1' && row.service !== 'Sunday Service 2') continue
+      const key = sundayPairKey(row)
+      if (!byDay.has(key)) byDay.set(key, new Set())
+      for (const name of parseChoirNames(row.choirs)) byDay.get(key).add(name)
+    }
+    for (const [day, names] of byDay) {
+      if (names.has('Beulah Choir') && names.has('Yerusalemu Choir')) {
+        conflicts.push(day)
+      }
+    }
+    rows.push({
+      rule: 'Beulah and Yerusalemu not same Sunday',
+      issue:
+        conflicts.length === 0
+          ? 'Beulah and Yerusalemu never appear on the same Sunday'
+          : `Both on Sunday: ${conflicts.slice(0, 4).join(', ')}${conflicts.length > 4 ? '…' : ''}`,
+      severity: conflicts.length === 0 ? 'Passed' : 'Error',
+      service: 'Sundays',
+      status: conflicts.length === 0 ? 'Resolved' : 'Open',
     })
   }
 
@@ -198,4 +263,55 @@ export function publishBlocked(validationSummary, rules) {
   const blockRule = rules.find((r) => r.id === 'publish-block-errors')
   if (blockRule?.enabled && (validationSummary?.errors ?? 0) > 0) return true
   return false
+}
+
+const CHOIR_RULE_IDS = new Set(['hope-ss1', 'no-ss1-ss2-overlap', 'no-beulah-yerusalemu-sunday'])
+
+/** Choir-only validation for choir scheduler publish. */
+export function validateChoirPayload(payload, rules) {
+  const full = validateSchedulePayload(payload, rules)
+  const rows = full.rows.filter((r) => {
+    const id = rules.find((rule) => rule.name === r.rule)?.id
+    if (id && CHOIR_RULE_IDS.has(id)) return true
+    return /hope choir|shared choir on ss1|beulah and yerusalemu/i.test(r.rule ?? '')
+  })
+  const choirs = payload.choirAssignments ?? []
+  const services = (payload.services ?? []).filter((s) => !/^Friday\b/i.test(s.name ?? ''))
+  if (services.length > 0) {
+    const missing = services.filter((s) => {
+      const label = formatDateLabel(s.date)
+      return !choirs.some((c) => c.service === s.name && c.date === label)
+    })
+    rows.push({
+      rule: 'Choir coverage',
+      issue:
+        missing.length === 0
+          ? `Choir assigned for all ${services.length} non-Friday services`
+          : `${missing.length} service(s) still need a choir assignment`,
+      severity: missing.length === 0 ? 'Passed' : 'Error',
+      service: 'All services',
+      status: missing.length === 0 ? 'Resolved' : 'Open',
+    })
+  } else {
+    rows.push({
+      rule: 'Choir coverage',
+      issue: 'Generate the monthly calendar before assigning choirs',
+      severity: 'Error',
+      service: 'Calendar',
+      status: 'Open',
+    })
+  }
+
+  const errors = rows.filter((r) => r.severity === 'Error').length
+  const warnings = rows.filter((r) => r.severity === 'Warning').length
+  const passed = rows.filter((r) => r.severity === 'Passed').length
+  return {
+    rows,
+    summary: {
+      passed,
+      warnings,
+      errors,
+      status: errors > 0 ? 'FAIL' : warnings > 0 ? 'WARN' : 'PASS',
+    },
+  }
 }
