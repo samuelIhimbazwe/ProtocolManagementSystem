@@ -17,6 +17,8 @@ import {
   siblingSundayChoirs,
   sundayDayChoirs,
   exclusiveSundayPartners,
+  monthlyOnceExclude,
+  monthlyOnceViolation,
 } from '../../components/ChoirCardActions'
 import { CHOIRS } from '../../data/mock'
 import {
@@ -115,7 +117,11 @@ export default function ChoirScheduleTab({
     const dayChoirs = sundayDayChoirs(assignments, row).filter(
       (c) => !parseChoirList(row.choirs).includes(c),
     )
-    const exclude = [...dayChoirs, ...exclusiveSundayPartners(dayChoirs)]
+    const exclude = [
+      ...dayChoirs,
+      ...exclusiveSundayPartners(dayChoirs),
+      ...monthlyOnceExclude(assignments, index),
+    ]
     const choirs = regenerateChoirsForService(row.service, CHOIRS, { exclude })
     patchAssignment(index, { choirs })
     showToast(`Regenerated choirs for ${row.service} (${row.date})`)
@@ -137,6 +143,11 @@ export default function ChoirScheduleTab({
     if (exclusiveSundayPartners(dayChoirs).includes(addChoirPick)) {
       showToast(
         `Manual override: Beulah and Yerusalemu cannot share the same Sunday — fix before publish`,
+      )
+    }
+    if (monthlyOnceViolation(assignments, modal.index, addChoirPick)) {
+      showToast(
+        `Manual override: ${addChoirPick} already sings once this month — fix before publish`,
       )
     }
     const sibling = siblingSundayChoirs(assignments, assignments[modal.index])
@@ -176,6 +187,11 @@ export default function ChoirScheduleTab({
     if (exclusiveSundayPartners(dayChoirs).includes(replaceTo)) {
       showToast(
         `Manual override: Beulah and Yerusalemu cannot share the same Sunday — fix before publish`,
+      )
+    }
+    if (monthlyOnceViolation(assignments, modal.index, replaceTo)) {
+      showToast(
+        `Manual override: ${replaceTo} already sings once this month — fix before publish`,
       )
     }
     const sibling = siblingSundayChoirs(assignments, assignments[modal.index])
@@ -317,6 +333,8 @@ export default function ChoirScheduleTab({
           monthLabel={monthLabel}
           canEdit={canEdit}
           onAssignmentsChange={setAssignments}
+          onRegenerate={canEdit ? regenerateRow : undefined}
+          onEdit={canEdit ? openEditMenu : undefined}
         />
       ) : format === 'list' ? (
         <ChoirScheduleList

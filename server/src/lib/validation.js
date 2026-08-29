@@ -109,6 +109,30 @@ export function validateSchedulePayload(payload, rules, { memberByName, serveDay
     })
   }
 
+  if (ruleMap['beulah-yerusalemu-monthly-once']?.enabled) {
+    const MONTHLY_ONCE = ['Beulah Choir', 'Yerusalemu Choir']
+    const slotsByChoir = Object.fromEntries(MONTHLY_ONCE.map((c) => [c, []]))
+    for (const row of choirs) {
+      const label = `${row.service} ${row.date}`
+      for (const name of parseChoirNames(row.choirs)) {
+        if (slotsByChoir[name]) slotsByChoir[name].push(label)
+      }
+    }
+    const violations = MONTHLY_ONCE.filter((c) => slotsByChoir[c].length > 1).map(
+      (c) => `${c}: ${slotsByChoir[c].length}× (${slotsByChoir[c].slice(0, 3).join(', ')}${slotsByChoir[c].length > 3 ? '…' : ''})`,
+    )
+    rows.push({
+      rule: 'Beulah and Yerusalemu once per month',
+      issue:
+        violations.length === 0
+          ? 'Beulah and Yerusalemu each appear at most once this month'
+          : violations.join('; '),
+      severity: violations.length === 0 ? 'Passed' : 'Error',
+      service: 'Monthly choir',
+      status: violations.length === 0 ? 'Resolved' : 'Open',
+    })
+  }
+
   if (ruleMap['sunday-team-size']?.enabled) {
     const sundayTeams = teams.filter((t) => t.kind === 'sunday')
     const bad = sundayTeams.filter((t) => (t.members?.length ?? 0) !== FULL_ROSTER_TEAM_SIZE)
@@ -265,7 +289,12 @@ export function publishBlocked(validationSummary, rules) {
   return false
 }
 
-const CHOIR_RULE_IDS = new Set(['hope-ss1', 'no-ss1-ss2-overlap', 'no-beulah-yerusalemu-sunday'])
+const CHOIR_RULE_IDS = new Set([
+  'hope-ss1',
+  'no-ss1-ss2-overlap',
+  'no-beulah-yerusalemu-sunday',
+  'beulah-yerusalemu-monthly-once',
+])
 
 /** Choir-only validation for choir scheduler publish. */
 export function validateChoirPayload(payload, rules) {
@@ -273,7 +302,7 @@ export function validateChoirPayload(payload, rules) {
   const rows = full.rows.filter((r) => {
     const id = rules.find((rule) => rule.name === r.rule)?.id
     if (id && CHOIR_RULE_IDS.has(id)) return true
-    return /hope choir|shared choir on ss1|beulah and yerusalemu/i.test(r.rule ?? '')
+    return /hope choir|shared choir on ss1|beulah and yerusalemu|once per month/i.test(r.rule ?? '')
   })
   const choirs = payload.choirAssignments ?? []
   const services = (payload.services ?? []).filter((s) => !/^Friday\b/i.test(s.name ?? ''))

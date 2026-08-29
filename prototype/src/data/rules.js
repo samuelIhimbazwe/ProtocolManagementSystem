@@ -33,6 +33,16 @@ export const DEFAULT_RULE_CONFIGURATION = [
     parameter: 'Beulah ∩ Yerusalemu on same Sunday: empty',
   },
   {
+    id: 'beulah-yerusalemu-monthly-once',
+    category: 'Choir',
+    name: 'Beulah and Yerusalemu once per month',
+    description:
+      'Beulah Choir and Yerusalemu Choir may each appear on at most one service in the month. Auto-generation never breaks this.',
+    severity: 'Error',
+    enabled: true,
+    parameter: 'Max appearances / month: 1 each',
+  },
+  {
     id: 'choir-rotation',
     category: 'Choir',
     name: 'Choir rotation window',

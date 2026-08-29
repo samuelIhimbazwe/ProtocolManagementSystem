@@ -3,6 +3,9 @@
 /** Pairs that must never both appear on the same Sunday (SS1 + SS2 combined). */
 export const MUTUAL_EXCLUSIVE_SUNDAY_PAIRS = [['Beulah Choir', 'Yerusalemu Choir']]
 
+/** Each may appear on at most one service in the month. */
+export const MONTHLY_ONCE_CHOIRS = ['Beulah Choir', 'Yerusalemu Choir']
+
 export function parseChoirList(choirs) {
   return String(choirs ?? '')
     .split(',')
@@ -32,6 +35,31 @@ export function exclusiveSundayPartners(names = []) {
     if (set.has(b)) partners.add(a)
   }
   return [...partners]
+}
+
+/** Count monthly-once choir appearances across assignments (optional row index to skip). */
+export function monthlyChoirCounts(assignments, { skipIndex } = {}) {
+  const counts = Object.fromEntries(MONTHLY_ONCE_CHOIRS.map((c) => [c, 0]))
+  ;(assignments ?? []).forEach((row, i) => {
+    if (i === skipIndex) return
+    for (const name of parseChoirList(row.choirs)) {
+      if (counts[name] != null) counts[name] += 1
+    }
+  })
+  return counts
+}
+
+/** Choirs already used this month on other services — exclude when auto-picking. */
+export function monthlyOnceExclude(assignments, skipIndex) {
+  const counts = monthlyChoirCounts(assignments, { skipIndex })
+  return MONTHLY_ONCE_CHOIRS.filter((c) => counts[c] > 0)
+}
+
+/** True if adding `choirName` would exceed once-per-month for Beulah / Yerusalemu. */
+export function monthlyOnceViolation(assignments, rowIndex, choirName) {
+  if (!MONTHLY_ONCE_CHOIRS.includes(choirName)) return false
+  const counts = monthlyChoirCounts(assignments, { skipIndex: rowIndex })
+  return counts[choirName] > 0
 }
 
 function pickN(pool, n, exclude = []) {
@@ -124,6 +152,7 @@ export function sundayDayChoirs(assignments, row) {
  * Build choir assignments for every service in the monthly calendar.
  * Same-day SS1/SS2 never share a choir via automatic generation.
  * Beulah and Yerusalemu never both appear on the same Sunday.
+ * Beulah and Yerusalemu each sing at most once per month.
  */
 export function buildMonthlyChoirAssignments(services, choirsCatalog) {
   const slots = [...(services ?? [])]
@@ -138,6 +167,8 @@ export function buildMonthlyChoirAssignments(services, choirsCatalog) {
   }
 
   const rows = []
+  const usedMonthlyOnce = new Set()
+
   for (const [, daySlots] of byDate) {
     const ordered = [
       ...daySlots.filter((s) => s.name === 'Sunday Service 1'),
@@ -147,15 +178,15 @@ export function buildMonthlyChoirAssignments(services, choirsCatalog) {
     let ss1Choirs = []
 
     for (const s of ordered) {
-      let exclude = []
+      let exclude = [...usedMonthlyOnce]
       if (s.name === 'Sunday Service 2') {
-        exclude = [...ss1Choirs, ...exclusiveSundayPartners(ss1Choirs)]
-      } else if (s.name === 'Sunday Service 1') {
-        // When regenerating SS1 alone, partners of already-scheduled SS2 are excluded by callers.
-        exclude = []
+        exclude = [...exclude, ...ss1Choirs, ...exclusiveSundayPartners(ss1Choirs)]
       }
       const choirs = regenerateChoirsForService(s.name, choirsCatalog, { exclude })
       if (s.name === 'Sunday Service 1') ss1Choirs = parseChoirList(choirs)
+      for (const c of parseChoirList(choirs)) {
+        if (MONTHLY_ONCE_CHOIRS.includes(c)) usedMonthlyOnce.add(c)
+      }
       rows.push({
         service: s.name,
         date: formatChoirSlotDate(s.date),

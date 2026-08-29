@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { joinChoirList, parseChoirList } from '../ChoirCardActions'
+import ChoirServiceToolbar from '../ChoirServiceToolbar'
 import BulletinChurchHeader from './BulletinChurchHeader'
 import BulletinEditable from './BulletinEditable'
 import {
@@ -46,6 +47,18 @@ function cellDate(weekItems, bucket) {
   return formatBulletinDateSlash(hit.parts)
 }
 
+function rowForBucket(weekItems, bucket) {
+  return weekItems.find(({ row }) => choirServiceBucket(row.service) === bucket)?.row
+}
+
+function assignmentIndex(assignments, row) {
+  if (!row || !assignments?.length) return -1
+  const key = rowKey(row)
+  return assignments.findIndex(
+    (a) => rowKey(a) === key || (a.service === row.service && a.date === row.date),
+  )
+}
+
 function normalizeEditedChoirName(edited, previous) {
   const next = String(edited ?? '').trim()
   if (!next) return ''
@@ -55,7 +68,8 @@ function normalizeEditedChoirName(edited, previous) {
   return next
 }
 
-function ChoirCell({ names, canEdit, displayShort, onNameChange }) {
+function ChoirCell({ names, canEdit, displayShort, onNameChange, row, assignments, onRegenerate, onEdit }) {
+  const index = assignmentIndex(assignments, row)
   return (
     <td className="pmss-choir-cell">
       {(names.length ? names : canEdit ? [''] : ['—']).map((n, i) => {
@@ -75,6 +89,15 @@ function ChoirCell({ names, canEdit, displayShort, onNameChange }) {
           </div>
         )
       })}
+      {canEdit && index >= 0 && onRegenerate && onEdit && (
+        <div className="pmss-no-print">
+          <ChoirServiceToolbar
+            compact
+            onRegenerate={() => onRegenerate(index)}
+            onEdit={() => onEdit(index)}
+          />
+        </div>
+      )}
     </td>
   )
 }
@@ -89,6 +112,8 @@ export default function ChoirScheduleBulletin({
   monthLabel = 'August 2026',
   canEdit = false,
   onAssignmentsChange,
+  onRegenerate,
+  onEdit,
 }) {
   const year = Number(monthLabel.match(/\d{4}/)?.[0]) || 2026
   const monthUpper = monthLabel.replace(/\d{4}/, '').trim().toUpperCase()
@@ -164,7 +189,8 @@ export default function ChoirScheduleBulletin({
     <article id={id} className="pmss-bulletin pmss-bulletin--choir">
       {canEdit && (
         <p className="pmss-bulletin-edit-hint pmss-no-print">
-          Click any text to edit — church name, titles, week labels, dates, choir names, and footer.
+          Click any text to edit — or use <strong>Edit</strong> / <strong>Regenerate</strong> on each service (same as
+          cards and list).
         </p>
       )}
       <BulletinChurchHeader
@@ -282,15 +308,22 @@ export default function ChoirScheduleBulletin({
               </thead>
               <tbody>
                 <tr>
-                  {['tuesday', 'friday', 'sunday1', 'sunday2'].map((bucket) => (
-                    <ChoirCell
-                      key={bucket}
-                      names={choirsForBucket(items, bucket)}
-                      canEdit={canEdit}
-                      displayShort={!canEdit}
-                      onNameChange={(i, v) => patchBucketChoir(items, bucket, i, v)}
-                    />
-                  ))}
+                  {['tuesday', 'friday', 'sunday1', 'sunday2'].map((bucket) => {
+                    const row = rowForBucket(items, bucket)
+                    return (
+                      <ChoirCell
+                        key={bucket}
+                        names={choirsForBucket(items, bucket)}
+                        canEdit={canEdit}
+                        displayShort={!canEdit}
+                        row={row}
+                        assignments={assignments}
+                        onRegenerate={onRegenerate}
+                        onEdit={onEdit}
+                        onNameChange={(i, v) => patchBucketChoir(items, bucket, i, v)}
+                      />
+                    )
+                  })}
                 </tr>
               </tbody>
             </table>
@@ -309,12 +342,14 @@ export default function ChoirScheduleBulletin({
                 <th className="pmss-choir-th">Service</th>
                 <th className="pmss-choir-th">Date</th>
                 <th className="pmss-choir-th">Choirs</th>
+                {canEdit && <th className="pmss-choir-th pmss-no-print">Actions</th>}
               </tr>
             </thead>
             <tbody>
               {otherRows.map((row) => {
                 const names = parseChoirList(row.choirs)
                 const parts = parseBulletinDateParts(row.date, year)
+                const index = assignmentIndex(assignments, row)
                 return (
                   <tr key={rowKey(row)}>
                     <td className="pmss-choir-cell">
@@ -341,6 +376,15 @@ export default function ChoirScheduleBulletin({
                         </div>
                       ))}
                     </td>
+                    {canEdit && index >= 0 && (
+                      <td className="pmss-choir-cell pmss-no-print align-middle">
+                        <ChoirServiceToolbar
+                          compact
+                          onRegenerate={() => onRegenerate?.(index)}
+                          onEdit={() => onEdit?.(index)}
+                        />
+                      </td>
+                    )}
                   </tr>
                 )
               })}
@@ -370,7 +414,8 @@ export default function ChoirScheduleBulletin({
               {igaburoRows.flatMap((row) => {
                 const names = parseChoirList(row.choirs)
                 const list = names.length ? names : canEdit ? [''] : []
-                return list.map((name, i) => (
+                const index = assignmentIndex(assignments, row)
+                const choirRows = list.map((name, i) => (
                   <tr key={`${rowKey(row)}-${i}`}>
                     <td className="pmss-choir-cell">
                       {canEdit ? (
@@ -385,6 +430,20 @@ export default function ChoirScheduleBulletin({
                     </td>
                   </tr>
                 ))
+                if (canEdit && index >= 0) {
+                  choirRows.push(
+                    <tr key={`${rowKey(row)}-actions`} className="pmss-no-print">
+                      <td className="pmss-choir-cell">
+                        <ChoirServiceToolbar
+                          compact
+                          onRegenerate={() => onRegenerate?.(index)}
+                          onEdit={() => onEdit?.(index)}
+                        />
+                      </td>
+                    </tr>,
+                  )
+                }
+                return choirRows
               })}
             </tbody>
           </table>
