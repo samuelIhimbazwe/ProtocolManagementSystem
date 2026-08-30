@@ -42,6 +42,7 @@ export function ScheduleProvider({ children }) {
   const [editable, setEditable] = useState(false)
   const [editableChoir, setEditableChoir] = useState(false)
   const [editableTeams, setEditableTeams] = useState(false)
+  const [choirPublished, setChoirPublished] = useState(null)
   const [payload, setPayload] = useState(() => (useApi ? null : demoPayload()))
   const [monthsMeta, setMonthsMeta] = useState(null)
   const [visibility, setVisibility] = useState('public')
@@ -61,6 +62,7 @@ export function ScheduleProvider({ children }) {
     setEditable(Boolean(data.editable))
     setEditableChoir(Boolean(data.editableChoir ?? data.editable))
     setEditableTeams(Boolean(data.editableTeams ?? data.editable))
+    setChoirPublished(typeof data.choirPublished === 'boolean' ? data.choirPublished : null)
     setVisibility(data.visibility ?? (data.source === 'published' ? 'public' : 'draft'))
     setIsPublic(Boolean(data.isPublic))
     setPublishedMeta(data.published ?? null)
@@ -205,6 +207,7 @@ export function ScheduleProvider({ children }) {
       editable,
       editableChoir,
       editableTeams,
+      choirPublished,
       payload: payload ?? demoPayload(),
       teamAssignments: (payload ?? demoPayload()).teamAssignments ?? TEAM_ASSIGNMENTS,
       services: (payload ?? demoPayload()).services ?? SERVICES,
@@ -225,6 +228,7 @@ export function ScheduleProvider({ children }) {
       editable,
       editableChoir,
       editableTeams,
+      choirPublished,
       payload,
       monthsMeta,
       visibility,

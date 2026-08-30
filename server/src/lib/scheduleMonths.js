@@ -57,8 +57,23 @@ export function emptyMonthPayload(monthKey) {
 }
 
 export function isChoirPublished(payload) {
-  if (String(payload?.choirStatus ?? '') === 'published') return true
+  if (!payload) return false
+  if (String(payload.choirStatus ?? '').toLowerCase() === 'published') return true
+  if (payload.choirPublishedAt && (payload.choirAssignments?.length ?? 0) > 0) return true
   // Legacy months (before choir_scheduler role): choirs already filled without status
-  if (payload?.choirStatus == null && (payload?.choirAssignments?.length ?? 0) > 0) return true
+  if (payload.choirStatus == null && (payload.choirAssignments?.length ?? 0) > 0) return true
   return false
+}
+
+/** Fix drafts where publish metadata exists but status was downgraded by a stale save. */
+export function repairChoirPublishMeta(payload) {
+  if (!payload) return payload
+  if (
+    payload.choirPublishedAt &&
+    (payload.choirAssignments?.length ?? 0) > 0 &&
+    String(payload.choirStatus ?? '').toLowerCase() !== 'published'
+  ) {
+    return { ...payload, choirStatus: 'published' }
+  }
+  return payload
 }

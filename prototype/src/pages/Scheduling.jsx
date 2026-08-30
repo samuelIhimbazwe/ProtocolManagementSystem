@@ -37,6 +37,7 @@ import {
 } from '../lib/scheduleExport'
 import { buildMonthlyServices, monthLabelFromKey } from '../lib/monthlyCalendar'
 import { isFullRosterKind } from '../data/teamEngine'
+import { isChoirPublished } from '../lib/scheduleMonths'
 
 const TABS = [
   { id: 'calendar', label: 'Calendar', icon: Calendar },
@@ -69,6 +70,7 @@ export default function SchedulingPage() {
     isPublic,
     publishedMeta,
     activeMonthKey,
+    choirPublished: choirPublishedFromApi,
   } = useSchedule()
 
   const services = payload.services ?? []
@@ -76,8 +78,8 @@ export default function SchedulingPage() {
   const validationSummary = payload.validationSummary ?? { passed: 0, warnings: 0, errors: 0, status: 'PENDING' }
   const validationRows = payload.validationRows ?? []
   const choirPublished =
-    String(payload.choirStatus ?? '') === 'published' ||
-    (payload.choirStatus == null && (payload.choirAssignments?.length ?? 0) > 0)
+    choirPublishedFromApi ?? isChoirPublished(payload)
+  const choirAssignmentCount = payload.choirAssignments?.length ?? 0
 
   const visibleTabs = TABS.filter((t) => permissions.schedulingTabs.includes(t.id))
   const apiOpen = USE_API ? editable : true
@@ -174,12 +176,10 @@ export default function SchedulingPage() {
         monthKey: payload.monthKey ?? liveMonthKey,
         monthLabel: payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? liveMonthKey),
         visible: true,
-        choirPublished:
-          String(payload.choirStatus ?? '') === 'published' ||
-          (payload.choirStatus == null && (payload.choirAssignments?.length ?? 0) > 0),
+        choirPublished: isChoirPublished(payload),
       },
     ]
-  }, [monthsMeta, payload.monthKey, payload.monthLabel, payload.choirStatus, payload.choirAssignments, liveMonthKey])
+  }, [monthsMeta, payload, liveMonthKey])
 
   const nextMonthMeta = useMemo(
     () => visibleMonthOptions.find((m) => m.monthKey === nextMonthKeyVal) ?? null,
@@ -292,6 +292,16 @@ export default function SchedulingPage() {
       await switchMonth(monthKey)
     }
     const label = monthLabelFromKey(monthKey)
+    if (
+      isChoirPublished(payload) ||
+      (payload.choirAssignments?.length ?? 0) > 0 ||
+      (payload.teamAssignments?.length ?? 0) > 0
+    ) {
+      const ok = window.confirm(
+        `Regenerating the calendar for ${label} will reset choir assignments, service teams, and leadership review for this month. Continue?`,
+      )
+      if (!ok) return
+    }
     const generated = buildMonthlyServices(monthKey)
     if (!generated.length) {
       showToast('Could not build services for that month')
@@ -670,8 +680,18 @@ export default function SchedulingPage() {
         <div className="space-y-4">
           {!choirPublished && (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-card px-4 py-3">
-              Choir schedule is not published yet. The choir scheduler must publish the monthly choir plan
-              before protocol teams can be built.
+              {choirAssignmentCount > 0 ? (
+                <>
+                  Choir assignments exist for {choirAssignmentCount} services, but the plan is still marked as{' '}
+                  <strong>draft</strong>. The choir scheduler must open the <strong>Publish</strong> tab and click{' '}
+                  <strong>Publish choir schedule</strong> (assigning choirs alone is not enough).
+                </>
+              ) : (
+                <>
+                  Choir schedule is not published yet. The choir scheduler must generate the choir plan and publish
+                  it before protocol teams can be built.
+                </>
+              )}
             </p>
           )}
           <ServiceTeamsTab

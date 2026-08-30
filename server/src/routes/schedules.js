@@ -19,6 +19,7 @@ import {
   monthLabelFromKey,
   nextMonthKey,
   isChoirPublished,
+  repairChoirPublishMeta,
 } from '../lib/scheduleMonths.js'
 
 const router = Router()
@@ -43,12 +44,18 @@ function rowIsPublic(row) {
 }
 
 function normalizeChoirMeta(payload) {
-  return {
+  return repairChoirPublishMeta({
     ...payload,
-    choirStatus: payload.choirStatus === 'published' ? 'published' : 'draft',
+    choirStatus: isChoirPublished(payload) ? 'published' : 'draft',
     choirPublishedAt: payload.choirPublishedAt ?? null,
     choirPublishedBy: payload.choirPublishedBy ?? null,
-  }
+  })
+}
+
+/** Client sent choir edits while aware of the current publish stamp — allow unpublish. */
+function clientAcknowledgesChoirPublish(payload, previous) {
+  if (!previous?.choirPublishedAt) return true
+  return String(payload?.choirPublishedAt ?? '') === String(previous.choirPublishedAt)
 }
 
 async function attachValidation(payload) {
@@ -182,11 +189,21 @@ router.get('/current', authMiddleware, async (req, res) => {
     }
     const payload = await attachValidation(parsePayload(draft))
     const published = await getLatestPublishedForMonth(draft.month_key)
+    if (
+      payload.choirPublishedAt &&
+      isChoirPublished(payload) &&
+      String(parsePayload(draft).choirStatus ?? '').toLowerCase() !== 'published'
+    ) {
+      await db
+        .prepare(`UPDATE schedule_versions SET payload_json = ? WHERE id = ?`)
+        .run(JSON.stringify(payload), draft.id)
+    }
     return res.json({
       source: 'draft',
       editable: true,
       editableChoir: canEditChoir,
       editableTeams: canEditTeams,
+      choirPublished: isChoirPublished(payload),
       id: draft.id,
       monthKey: draft.month_key,
       versionLabel: draft.version_label,
@@ -322,9 +339,16 @@ router.put('/draft', authMiddleware, async (req, res) => {
       merged.choirPublishedAt = null
       merged.choirPublishedBy = null
     } else if (choirChanged && isChoirPublished(previous)) {
-      merged.choirStatus = 'draft'
-      merged.choirPublishedAt = null
-      merged.choirPublishedBy = null
+      if (clientAcknowledgesChoirPublish(payload, previous)) {
+        merged.choirStatus = 'draft'
+        merged.choirPublishedAt = null
+        merged.choirPublishedBy = null
+      } else {
+        merged.choirAssignments = previous.choirAssignments
+        merged.choirStatus = previous.choirStatus
+        merged.choirPublishedAt = previous.choirPublishedAt
+        merged.choirPublishedBy = previous.choirPublishedBy
+      }
     }
   } else {
     merged = {
@@ -342,9 +366,13 @@ router.put('/draft', authMiddleware, async (req, res) => {
       JSON.stringify(previous.choirAssignments ?? []) !== JSON.stringify(payload.choirAssignments ?? []) &&
       isChoirPublished(previous)
     ) {
-      merged.choirStatus = 'draft'
-      merged.choirPublishedAt = null
-      merged.choirPublishedBy = null
+      if (clientAcknowledgesChoirPublish(payload, previous)) {
+        merged.choirStatus = 'draft'
+        merged.choirPublishedAt = null
+        merged.choirPublishedBy = null
+      } else {
+        merged.choirAssignments = previous.choirAssignments
+      }
     }
     if (!canTeams) {
       merged.teamAssignments = previous.teamAssignments
