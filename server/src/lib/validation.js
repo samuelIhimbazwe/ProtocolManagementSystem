@@ -113,6 +113,7 @@ export function validateSchedulePayload(payload, rules, { memberByName, serveDay
     const MONTHLY_ONCE = ['Beulah Choir', 'Yerusalemu Choir']
     const slotsByChoir = Object.fromEntries(MONTHLY_ONCE.map((c) => [c, []]))
     for (const row of choirs) {
+      if (row.service !== 'Sunday Service 1' && row.service !== 'Sunday Service 2') continue
       const label = `${row.service} ${row.date}`
       for (const name of parseChoirNames(row.choirs)) {
         if (slotsByChoir[name]) slotsByChoir[name].push(label)
@@ -125,12 +126,127 @@ export function validateSchedulePayload(payload, rules, { memberByName, serveDay
       rule: 'Beulah and Yerusalemu once per month',
       issue:
         violations.length === 0
-          ? 'Beulah and Yerusalemu each appear at most once this month'
+          ? 'Beulah and Yerusalemu each appear at most once on Sundays this month'
           : violations.join('; '),
       severity: violations.length === 0 ? 'Passed' : 'Error',
       service: 'Monthly choir',
       status: violations.length === 0 ? 'Resolved' : 'Open',
     })
+  }
+
+  if (ruleMap['no-duplicate-choir-service']?.enabled) {
+    const duplicates = []
+    for (const row of choirs) {
+      const names = parseChoirNames(row.choirs)
+      const seen = new Set()
+      const rowDups = new Set()
+      for (const name of names) {
+        if (seen.has(name)) rowDups.add(name)
+        seen.add(name)
+      }
+      if (rowDups.size) {
+        duplicates.push(`${row.service} ${row.date}: ${[...rowDups].join(', ')}`)
+      }
+    }
+    rows.push({
+      rule: 'No duplicate choir on same service',
+      issue:
+        duplicates.length === 0
+          ? 'No choir appears twice on the same service'
+          : duplicates.slice(0, 4).join('; ') + (duplicates.length > 4 ? '…' : ''),
+      severity: duplicates.length === 0 ? 'Passed' : 'Error',
+      service: 'All services',
+      status: duplicates.length === 0 ? 'Resolved' : 'Open',
+    })
+  }
+
+  if (ruleMap['no-primary-consecutive-sundays']?.enabled) {
+    const PRIMARY = [
+      'El Bethel Choir',
+      "Ijwi ry'Umwami Yesu Choir",
+      'Elim Choir',
+      'Integuza Choir',
+    ]
+    const violations = []
+
+    for (const serviceName of ['Sunday Service 1', 'Sunday Service 2']) {
+      const slotRows = choirs
+        .filter((row) => row.service === serviceName)
+        .sort((a, b) =>
+          String(a.serviceDate ?? a.date ?? '').localeCompare(String(b.serviceDate ?? b.date ?? '')),
+        )
+      for (let i = 2; i < slotRows.length; i += 1) {
+        for (const choir of PRIMARY) {
+          const on = (row) =>
+            parseChoirNames(row.choirs).includes(choir)
+          if (on(slotRows[i - 2]) && on(slotRows[i - 1]) && on(slotRows[i])) {
+            violations.push(
+              `${choir}: 3× ${serviceName} ${slotRows[i - 2].date} → ${slotRows[i].date}`,
+            )
+          }
+        }
+      }
+    }
+
+    for (const serviceName of ['Tuesday Service', 'Friday Service']) {
+      const slotRows = choirs
+        .filter((row) => row.service === serviceName)
+        .sort((a, b) =>
+          String(a.serviceDate ?? a.date ?? '').localeCompare(String(b.serviceDate ?? b.date ?? '')),
+        )
+      const skip = serviceName === 'Tuesday Service' ? new Set(['Worship Team']) : new Set()
+      for (let i = 1; i < slotRows.length; i += 1) {
+        const prevNames = parseChoirNames(slotRows[i - 1].choirs).filter((c) => !skip.has(c))
+        const currNames = parseChoirNames(slotRows[i].choirs).filter((c) => !skip.has(c))
+        const repeat = prevNames.filter((c) => currNames.includes(c))
+        if (repeat.length) {
+          violations.push(
+            `${repeat.join(', ')}: ${serviceName} ${slotRows[i - 1].date} → ${slotRows[i].date}`,
+          )
+        }
+      }
+    }
+
+    rows.push({
+      rule: 'No 3-in-a-row on Sunday slots (weekday back-to-back)',
+      issue:
+        violations.length === 0
+          ? 'No primary choir 3 Sundays in a row on SS1/SS2; no weekday back-to-back repeats'
+          : violations.slice(0, 4).join('; ') + (violations.length > 4 ? '…' : ''),
+      severity: violations.length === 0 ? 'Passed' : 'Error',
+      service: 'SS1, SS2, Tuesday, Friday',
+      status: violations.length === 0 ? 'Resolved' : 'Open',
+    })
+  }
+
+  {
+    const ss2CountIssues = []
+    const byDay = new Map()
+    for (const row of choirs) {
+      if (row.service !== 'Sunday Service 1' && row.service !== 'Sunday Service 2') continue
+      const key = sundayPairKey(row)
+      if (!byDay.has(key)) byDay.set(key, {})
+      byDay.get(key)[row.service] = parseChoirNames(row.choirs)
+    }
+    for (const [day, pair] of byDay) {
+      const ss1 = pair['Sunday Service 1'] ?? []
+      const ss2 = pair['Sunday Service 2'] ?? []
+      if (!ss2.length) continue
+      const secondary = [...ss1, ...ss2].filter((c) => c === 'Beulah Choir' || c === 'Yerusalemu Choir')
+      const expected = secondary.length > 0 ? 3 : 2
+      if (ss2.length !== expected) {
+        ss2CountIssues.push(`${day}: SS2 has ${ss2.length}, expected ${expected}`)
+      }
+    }
+    if (ss2CountIssues.length) {
+      rows.push({
+        rule: 'Sunday Service 2 choir count',
+        issue: ss2CountIssues.slice(0, 4).join('; ') + (ss2CountIssues.length > 4 ? '…' : ''),
+        severity: 'Error',
+        service: 'SS2',
+        status: 'Open',
+      })
+    }
   }
 
   if (ruleMap['sunday-team-size']?.enabled) {
@@ -294,6 +410,8 @@ const CHOIR_RULE_IDS = new Set([
   'no-ss1-ss2-overlap',
   'no-beulah-yerusalemu-sunday',
   'beulah-yerusalemu-monthly-once',
+  'no-primary-consecutive-sundays',
+  'no-duplicate-choir-service',
 ])
 
 /** Choir-only validation for choir scheduler publish. */
@@ -302,7 +420,9 @@ export function validateChoirPayload(payload, rules) {
   const rows = full.rows.filter((r) => {
     const id = rules.find((rule) => rule.name === r.rule)?.id
     if (id && CHOIR_RULE_IDS.has(id)) return true
-    return /hope choir|shared choir on ss1|beulah and yerusalemu|once per month/i.test(r.rule ?? '')
+    return /hope choir|shared choir on ss1|beulah and yerusalemu|once per month|ss1 back-to-back|ss1 → ss2|duplicate choir/i.test(
+      r.rule ?? '',
+    )
   })
   const choirs = payload.choirAssignments ?? []
   const services = (payload.services ?? []).filter((s) => !/^Friday\b/i.test(s.name ?? ''))

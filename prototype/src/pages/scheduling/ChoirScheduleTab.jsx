@@ -17,6 +17,15 @@ import {
   siblingSundayChoirs,
   sundayDayChoirs,
   exclusiveSundayPartners,
+  rotationExclude,
+  rotationViolation,
+  sundaySecondaryChoirs,
+  ss2ExpectedSlotCount,
+  ss2UsesSecondary,
+  slotBackToBackExclude,
+  slotBackToBackViolation,
+  MONTHLY_ONCE_CHOIRS,
+  ss1RotationPrefer,
   monthlyOnceExclude,
   monthlyOnceViolation,
 } from '../../components/ChoirCardActions'
@@ -26,6 +35,7 @@ import {
   downloadChoirScheduleExcel,
   downloadChoirSchedulePdf,
 } from '../../lib/choirScheduleExport'
+import { buildMonthlyServices, monthLabelFromKey } from '../../lib/monthlyCalendar'
 import { downloadBulletinPdf } from '../../lib/bulletinPdf'
 import ScheduleDownloadMenu from '../../components/ScheduleDownloadMenu'
 
@@ -39,7 +49,9 @@ export default function ChoirScheduleTab({
   controlledAssignments,
   onAssignmentsChange,
   services = [],
+  monthKey = null,
   monthLabel = 'August 2026',
+  onPersist,
 }) {
   const [format, setFormat] = useDisplayFormat('pmss-view-choir', 'cards')
   const [internal, setInternal] = useState([])
@@ -52,22 +64,55 @@ export default function ChoirScheduleTab({
   const [removeChoirPick, setRemoveChoirPick] = useState('')
 
   const choirOptions = useMemo(() => allChoirOptions(CHOIRS), [])
-  const hasCalendar = (services?.length ?? 0) > 0
+  const calendarServices = useMemo(() => {
+    if (monthKey && /^\d{4}-\d{2}$/.test(monthKey)) {
+      const built = buildMonthlyServices(monthKey)
+      if (built.length) return built
+    }
+    return services ?? []
+  }, [monthKey, services])
 
-  const generateFromCalendar = () => {
+  const hasCalendar = (calendarServices?.length ?? 0) > 0
+
+  const runEngine = () => buildMonthlyChoirAssignments(calendarServices, CHOIRS)
+
+  const applyEngineRows = async () => {
+    const rows = runEngine()
+    const mapped = rows.map((c, i) => ({ ...c, _key: choirKey(c, i) }))
+    setAssignments(mapped)
+    if (onPersist) {
+      try {
+        await onPersist(mapped)
+      } catch (err) {
+        showToast(err?.message ?? 'Could not save regenerated choir schedule')
+        throw err
+      }
+    }
+    return mapped
+  }
+
+  const generateFromCalendar = async () => {
     if (!hasCalendar) {
       showToast('Generate the monthly calendar first for the month you want')
       return
     }
-    const rows = buildMonthlyChoirAssignments(services, CHOIRS)
-    setAssignments(rows.map((c, i) => ({ ...c, _key: choirKey(c, i) })))
-    showToast(`Choir schedule generated for ${monthLabel} (${rows.length} services)`)
+    await applyEngineRows()
+    showToast(`Choir schedule generated for ${monthLabel} (${calendarServices.length} services)`)
   }
 
   const active = modal != null ? assignments[modal.index] : null
 
   const patchAssignment = (index, patch) => {
-    setAssignments((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch, status: 'Assigned' } : row)))
+    setAssignments((prev) =>
+      prev.map((row, i) => {
+        if (i !== index) return row
+        const next = { ...row, ...patch, status: 'Assigned' }
+        if (patch.choirs != null) {
+          next.choirs = joinChoirList(parseChoirList(patch.choirs))
+        }
+        return next
+      }),
+    )
   }
 
   const openEditMenu = (index) => {
@@ -112,6 +157,29 @@ export default function ChoirScheduleTab({
     showToast(`Removed ${choirName}`)
   }
 
+  const sundayRegenerateOptions = (index) => {
+    const row = assignments[index]
+    if (!/^Sunday Service [12]$/.test(row.service ?? '')) return {}
+    const key = String(row.serviceDate ?? row.date ?? '')
+    const ss1Row = assignments.find(
+      (a) => a.service === 'Sunday Service 1' && String(a.serviceDate ?? a.date ?? '') === key,
+    )
+    const ss2Row = assignments.find(
+      (a) => a.service === 'Sunday Service 2' && String(a.serviceDate ?? a.date ?? '') === key,
+    )
+    const ss1List = parseChoirList(ss1Row?.choirs)
+    const ss2List = parseChoirList(ss2Row?.choirs)
+    const secOnSs1 = ss1List.find((c) => MONTHLY_ONCE_CHOIRS.includes(c)) ?? null
+    const secOnSs2 = ss2List.find((c) => MONTHLY_ONCE_CHOIRS.includes(c)) ?? null
+    if (row.service === 'Sunday Service 1') {
+      return { ss1Secondary: secOnSs1 }
+    }
+    return {
+      ss2Secondary: secOnSs2,
+      ss2PrimaryCount: secOnSs1 ? 3 : 2,
+    }
+  }
+
   const regenerateRow = (index) => {
     const row = assignments[index]
     const dayChoirs = sundayDayChoirs(assignments, row).filter(
@@ -121,8 +189,14 @@ export default function ChoirScheduleTab({
       ...dayChoirs,
       ...exclusiveSundayPartners(dayChoirs),
       ...monthlyOnceExclude(assignments, index),
+      ...rotationExclude(assignments, row, CHOIRS),
     ]
-    const choirs = regenerateChoirsForService(row.service, CHOIRS, { exclude })
+    const prefer = ss1RotationPrefer(assignments, row)
+    const choirs = regenerateChoirsForService(row.service, CHOIRS, {
+      exclude,
+      prefer,
+      ...sundayRegenerateOptions(index),
+    })
     patchAssignment(index, { choirs })
     showToast(`Regenerated choirs for ${row.service} (${row.date})`)
   }
@@ -148,6 +222,11 @@ export default function ChoirScheduleTab({
     if (monthlyOnceViolation(assignments, modal.index, addChoirPick)) {
       showToast(
         `Manual override: ${addChoirPick} already sings once this month — fix before publish`,
+      )
+    }
+    if (rotationViolation(assignments, modal.index, addChoirPick, CHOIRS)) {
+      showToast(
+        `Manual override: ${addChoirPick} would be 3 Sundays in a row on this slot — fix before publish`,
       )
     }
     const sibling = siblingSundayChoirs(assignments, assignments[modal.index])
@@ -194,6 +273,11 @@ export default function ChoirScheduleTab({
         `Manual override: ${replaceTo} already sings once this month — fix before publish`,
       )
     }
+    if (rotationViolation(assignments, modal.index, replaceTo, CHOIRS)) {
+      showToast(
+        `Manual override: ${replaceTo} would be 3 Sundays in a row on this slot — fix before publish`,
+      )
+    }
     const sibling = siblingSundayChoirs(assignments, assignments[modal.index])
     if (sibling.includes(replaceTo)) {
       showToast(
@@ -206,18 +290,12 @@ export default function ChoirScheduleTab({
     closeModal()
   }
 
-  const regenerateAll = () => {
+  const regenerateAll = async () => {
     if (!hasCalendar) {
-      generateFromCalendar()
+      await generateFromCalendar()
       return
     }
-    if (!assignments.length) {
-      generateFromCalendar()
-      return
-    }
-    // Prefer rebuilding from the current month calendar so dates stay in sync.
-    const rows = buildMonthlyChoirAssignments(services, CHOIRS)
-    setAssignments(rows.map((c, i) => ({ ...c, _key: choirKey(c, i) })))
+    await applyEngineRows()
     showToast(`Choir schedule regenerated for ${monthLabel}`)
   }
 

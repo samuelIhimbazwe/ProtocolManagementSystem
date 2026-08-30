@@ -35,12 +35,31 @@ export const DEFAULT_RULE_CONFIGURATION = [
   {
     id: 'beulah-yerusalemu-monthly-once',
     category: 'Choir',
-    name: 'Beulah and Yerusalemu once per month',
+    name: 'Beulah and Yerusalemu once per month (Sunday)',
     description:
-      'Beulah Choir and Yerusalemu Choir may each appear on at most one service in the month. Auto-generation never breaks this.',
+      'Beulah Choir and Yerusalemu Choir may each appear on at most one Sunday per month (SS1 or SS2). When present, SS2 has 3 choir slots that day.',
     severity: 'Error',
     enabled: true,
-    parameter: 'Max appearances / month: 1 each',
+    parameter: 'Max Sunday appearances / month: 1 each',
+  },
+  {
+    id: 'no-duplicate-choir-service',
+    category: 'Choir',
+    name: 'No duplicate choir on same service',
+    description: 'The same choir must not appear twice on one service (e.g. two Ijwi on SS2). Auto-generation never breaks this.',
+    severity: 'Error',
+    enabled: true,
+    parameter: 'Each choir at most once per service row',
+  },
+  {
+    id: 'no-primary-consecutive-sundays',
+    category: 'Choir',
+    name: 'No 3-in-a-row on Sunday slots',
+    description:
+      'Primary choirs must not appear on the same Sunday service (SS1 or SS2) three weeks in a row — at most 2 consecutive. Applies across month boundaries. Tuesday/Friday: no back-to-back.',
+    severity: 'Error',
+    enabled: true,
+    parameter: 'Max 2 consecutive on SS1/SS2; SS1 → SS2 rotation',
   },
   {
     id: 'choir-rotation',

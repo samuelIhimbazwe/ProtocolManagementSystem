@@ -174,14 +174,42 @@ export default function SchedulingPage() {
         monthKey: payload.monthKey ?? liveMonthKey,
         monthLabel: payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? liveMonthKey),
         visible: true,
+        choirPublished:
+          String(payload.choirStatus ?? '') === 'published' ||
+          (payload.choirStatus == null && (payload.choirAssignments?.length ?? 0) > 0),
       },
     ]
-  }, [monthsMeta, payload.monthKey, payload.monthLabel, liveMonthKey])
+  }, [monthsMeta, payload.monthKey, payload.monthLabel, payload.choirStatus, payload.choirAssignments, liveMonthKey])
+
+  const nextMonthMeta = useMemo(
+    () => visibleMonthOptions.find((m) => m.monthKey === nextMonthKeyVal) ?? null,
+    [visibleMonthOptions, nextMonthKeyVal],
+  )
+  const choirReadyOnOtherMonth =
+    canEditTeams === false &&
+    permissions.manageSchedule &&
+    !choirPublished &&
+    nextMonthMeta?.choirPublished &&
+    calendarMonth !== nextMonthKeyVal
 
   const showToast = (msg) => {
     setToast(msg)
     setTimeout(() => setToast(null), 2800)
   }
+
+  const persistChoirAssignments = useCallback(
+    async (rows) => {
+      if (!USE_API) return
+      const cleaned = rows.map(({ _key, ...rest }) => rest)
+      const base = payload ?? {}
+      await persistNow({
+        ...base,
+        monthKey: base.monthKey ?? activeMonthKey ?? calendarMonth,
+        choirAssignments: cleaned,
+      })
+    },
+    [payload, activeMonthKey, calendarMonth, persistNow],
+  )
 
   useEffect(() => {
     const key = activeMonthKey || payload.monthKey
@@ -364,7 +392,6 @@ export default function SchedulingPage() {
       setPublishing(true)
       try {
         await flushDraft()
-        await saveScheduleDraft(payload)
         const monthKey = payload.monthKey || calendarMonth
         const result = await publishChoirSchedule(monthKey)
         showToast(`Choir schedule published — coordinator can now build service teams`)
@@ -477,6 +504,22 @@ export default function SchedulingPage() {
         </div>
       )}
 
+      {choirReadyOnOtherMonth && nextMonthKeyVal && (
+        <div className="mb-4 rounded-xl border border-primary-200 bg-primary-50/70 px-4 py-3 text-sm text-primary-950">
+          Choir schedule is published for{' '}
+          <strong>{nextMonthMeta?.monthLabel ?? monthLabelFromKey(nextMonthKeyVal)}</strong>. Switch to
+          that month (Next tab above) to build service teams — you are currently viewing{' '}
+          <strong>{monthLabelFromKey(calendarMonth)}</strong>.
+          <button
+            type="button"
+            className="ml-2 underline font-medium"
+            onClick={() => selectMonth(nextMonthKeyVal)}
+          >
+            Open {monthLabelFromKey(nextMonthKeyVal)}
+          </button>
+        </div>
+      )}
+
       {!canEdit && visibleMonthOptions.length > 1 && (
         <p className="text-sm text-neutral-500 mb-4">
           You can view {visibleMonthOptions.length} public months. Switch months below.
@@ -514,6 +557,9 @@ export default function SchedulingPage() {
               >
                 {monthLabelFromKey(liveMonthKey)}
                 <span className="ml-1 text-[10px] uppercase tracking-wide text-neutral-400">Live</span>
+                {visibleMonthOptions.find((m) => m.monthKey === liveMonthKey)?.choirPublished && (
+                  <span className="ml-1 text-[10px] text-emerald-700">· Choir ready</span>
+                )}
               </button>
               {(canEditCalendar || canEditChoir ? nextMonthKeyVal : null) && (
                 <button
@@ -527,6 +573,9 @@ export default function SchedulingPage() {
                 >
                   {monthLabelFromKey(nextMonthKeyVal)}
                   <span className="ml-1 text-[10px] uppercase tracking-wide text-neutral-400">Next</span>
+                  {nextMonthMeta?.choirPublished && (
+                    <span className="ml-1 text-[10px] text-emerald-700">· Choir ready</span>
+                  )}
                 </button>
               )}
               {visibleMonthOptions
@@ -610,7 +659,9 @@ export default function SchedulingPage() {
             controlledAssignments={choirRows}
             onAssignmentsChange={setChoirRows}
             services={services}
+            monthKey={payload.monthKey ?? calendarMonth}
             monthLabel={payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? calendarMonth)}
+            onPersist={persistChoirAssignments}
           />
         </div>
       )}

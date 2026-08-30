@@ -139,7 +139,7 @@ export function ScheduleProvider({ children }) {
   }, [isAuthenticated, refresh])
 
   const flushDraft = useCallback(async () => {
-    if (!USE_API || !editable || !pendingPayload.current) return
+    if (!USE_API || (!editable && !editableChoir && !editableTeams) || !pendingPayload.current) return
     if (saveTimer.current) {
       clearTimeout(saveTimer.current)
       saveTimer.current = null
@@ -151,11 +151,11 @@ export function ScheduleProvider({ children }) {
     } catch {
       /* ignore */
     }
-  }, [editable])
+  }, [editable, editableChoir, editableTeams])
 
   const persistDraft = useCallback(
     (nextPayload) => {
-      if (!USE_API || !editable) return
+      if (!USE_API || (!editable && !editableChoir && !editableTeams)) return
       pendingPayload.current = nextPayload
       if (saveTimer.current) clearTimeout(saveTimer.current)
       saveTimer.current = setTimeout(() => {
@@ -164,7 +164,7 @@ export function ScheduleProvider({ children }) {
         if (toSave) scheduleApi.saveScheduleDraft(toSave).catch(() => {})
       }, 700)
     },
-    [editable],
+    [editable, editableChoir, editableTeams],
   )
 
   const persistNow = useCallback(async (nextPayload) => {

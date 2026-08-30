@@ -30,11 +30,30 @@ export const DEFAULT_RULE_CONFIGURATION = [
   {
     id: 'beulah-yerusalemu-monthly-once',
     category: 'Choir',
-    name: 'Beulah and Yerusalemu once per month',
-    description: 'Beulah Choir and Yerusalemu Choir may each appear on at most one service in the month.',
+    name: 'Beulah and Yerusalemu once per month (Sunday)',
+    description:
+      'Beulah and Yerusalemu may each appear on at most one Sunday per month (SS1 or SS2). SS2 has 3 slots that day when either is scheduled.',
     severity: 'Error',
     enabled: true,
-    parameter: 'Max appearances / month: 1 each',
+    parameter: 'Max Sunday appearances / month: 1 each',
+  },
+  {
+    id: 'no-duplicate-choir-service',
+    category: 'Choir',
+    name: 'No duplicate choir on same service',
+    severity: 'Error',
+    enabled: true,
+    parameter: 'Each choir at most once per service row',
+  },
+  {
+    id: 'no-primary-consecutive-sundays',
+    category: 'Choir',
+    name: 'No 3-in-a-row on Sunday slots',
+    description:
+      'A primary choir must not serve SS1 or SS2 three Sundays in a row (max 2 consecutive). Carries across months. Weekday slots: no back-to-back repeat.',
+    severity: 'Error',
+    enabled: true,
+    parameter: 'Max 2 consecutive on SS1/SS2; SS1 → SS2 rotation',
   },
   { id: 'igaburo-team-size', category: 'Service team', name: 'Igaburo team size', severity: 'Error', enabled: true, parameter: 'Igaburo roster: 10 members' },
   { id: 'sunday-team-size', category: 'Service team', name: 'Sunday team size', severity: 'Error', enabled: true, parameter: 'Sunday roster: 10 members' },

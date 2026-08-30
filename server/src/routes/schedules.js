@@ -102,6 +102,7 @@ async function buildMonthsCatalog(canEdit) {
   for (const monthKey of [...keys].sort()) {
     const draft = await getDraftRow(monthKey)
     const published = await getLatestPublishedForMonth(monthKey, { publicOnly: false })
+    const draftPayload = draft ? normalizeChoirMeta(parsePayload(draft)) : null
     const isPublic = published ? rowIsPublic(published) : false
     const visible = Boolean(published && isPublic && !published.archived_at)
     if (!canEdit && !visible) continue
@@ -113,6 +114,9 @@ async function buildMonthsCatalog(canEdit) {
       isNext: monthKey === next,
       hasDraft: Boolean(draft),
       draftId: draft?.id ?? null,
+      hasCalendar: (draftPayload?.services?.length ?? 0) > 0,
+      choirStatus: draftPayload?.choirStatus ?? 'draft',
+      choirPublished: isChoirPublished(draftPayload),
       published: published
         ? {
             id: published.id,
@@ -305,6 +309,9 @@ router.put('/draft', authMiddleware, async (req, res) => {
         : previous.choirAssignments,
       monthKey,
       monthLabel: monthLabelFromKey(monthKey),
+      choirStatus: previous.choirStatus,
+      choirPublishedAt: previous.choirPublishedAt,
+      choirPublishedBy: previous.choirPublishedBy,
     }
     // Regenerating the month calendar resets choir + teams so the month stays ordered
     if (servicesChanged) {
