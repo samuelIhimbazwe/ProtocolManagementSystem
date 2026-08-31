@@ -293,26 +293,196 @@ function buildSecondaryPlan(sundayDates, secondaryList) {
   return plan
 }
 
-function buildSundayPrimarySchedule(sundayDates, catalog, priorAssignments = [], secondaryPlan = new Map()) {
-  const primaries = primaryChoirNames(catalog)
-  const history = historyFromPrior(priorAssignments, catalog)
+function distributeSlotQuotas(primaries, totalSlots, targetPerChoir) {
+  const quotas = Object.fromEntries(primaries.map((c) => [c, 0]))
+  if (!totalSlots || !primaries.length) return quotas
+
+  for (const c of primaries) quotas[c] = Math.min(targetPerChoir, totalSlots)
+  let assigned = primaries.reduce((s, c) => s + quotas[c], 0)
+  let i = 0
+  while (assigned < totalSlots) {
+    quotas[primaries[i % primaries.length]] += 1
+    assigned += 1
+    i += 1
+  }
+  return quotas
+}
+
+/** Monthly primary targets: 4 Sun → 2+2 each; 5 Sun → 5 total (3+2 / 2+3); 6+ → 3+3. */
+function computePrimaryQuotas(primaries, sundayDates, secondaryPlan) {
+  const n = sundayDates.length
+  const weekSlots = sundayDates.map((date) => {
+    const sec = secondaryPlan.get(date)
+    if (sec?.onSs1) {
+      // 4 primaries: 1 on SS1 + 3 on SS2 (no overlap); Beulah/Yerusalemu on SS1.
+      return { ss1: 1, ss2: 3 }
+    }
+    // Secondary on SS2 only, or normal week — 2 primaries each (+ secondary name on SS2).
+    return { ss1: 2, ss2: 2 }
+  })
+
+  const totalSs1 = weekSlots.reduce((s, w) => s + w.ss1, 0)
+  const totalSs2 = weekSlots.reduce((s, w) => s + w.ss2, 0)
+  const ss1Quota = {}
+  const ss2Quota = {}
+
+  if (n <= 4) {
+    for (const c of primaries) ss1Quota[c] = 2
+    Object.assign(ss2Quota, distributeSlotQuotas(primaries, totalSs2, 2))
+  } else if (n === 5) {
+    primaries.forEach((c, i) => {
+      if (i % 2 === 0) {
+        ss1Quota[c] = 3
+        ss2Quota[c] = 2
+      } else {
+        ss1Quota[c] = 2
+        ss2Quota[c] = 3
+      }
+    })
+    rebalanceQuotasToTotals(primaries, ss1Quota, totalSs1)
+    rebalanceQuotasToTotals(primaries, ss2Quota, totalSs2)
+  } else {
+    for (const c of primaries) {
+      ss1Quota[c] = 3
+      ss2Quota[c] = 3
+    }
+    rebalanceQuotasToTotals(primaries, ss1Quota, totalSs1)
+    rebalanceQuotasToTotals(primaries, ss2Quota, totalSs2)
+  }
+
+  return { weekSlots, ss1Quota, ss2Quota }
+}
+
+function rebalanceQuotasToTotals(primaries, quotas, targetTotal) {
+  let sum = primaries.reduce((s, c) => s + quotas[c], 0)
+  let guard = 0
+  while (sum > targetTotal && guard < 64) {
+    const donor = primaries.find((c) => quotas[c] > 1)
+    if (!donor) break
+    quotas[donor] -= 1
+    sum -= 1
+    guard += 1
+  }
+  guard = 0
+  while (sum < targetTotal && guard < 64) {
+    const i = guard % primaries.length
+    quotas[primaries[i]] += 1
+    sum += 1
+    guard += 1
+  }
+}
+
+function scoreQuotaSplit(split, ss1Rem, ss2Rem, history) {
+  let score = scoreSundaySplit(split, history)
+  for (const c of split.ss1) {
+    if (ss1Rem[c] <= 0) score += 5000
+    else score -= ss1Rem[c] * 25
+  }
+  for (const c of split.ss2) {
+    if (ss2Rem[c] <= 0) score += 5000
+    else score -= ss2Rem[c] * 25
+  }
+  return score
+}
+
+function listValidQuotaSplits(primaries, ss1Count, ss2Count, history) {
+  const out = []
+  for (const ss1 of combinations(primaries, ss1Count)) {
+    const ss2Pool = primaries.filter((c) => !ss1.includes(c))
+    if (ss2Pool.length < ss2Count) continue
+    for (const ss2 of combinations(ss2Pool, ss2Count)) {
+      const split = { ss1: [...ss1], ss2: [...ss2] }
+      if (!passesSundayHardRules(split, history)) continue
+      out.push(split)
+    }
+  }
+  return out
+}
+
+function solveQuotaSundaySchedule(sundayDates, primaries, weekSlots, ss1Quota, ss2Quota, priorHistory, secondaryPlan) {
+  const ss1Rem = { ...ss1Quota }
+  const ss2Rem = { ...ss2Quota }
+  const history = [...priorHistory]
   const schedule = new Map()
 
+  function dfs(weekIndex) {
+    if (weekIndex >= sundayDates.length) {
+      return primaries.every((c) => ss1Rem[c] === 0 && ss2Rem[c] === 0)
+    }
+
+    const date = sundayDates[weekIndex]
+    const { ss1: ss1Count, ss2: ss2Count } = weekSlots[weekIndex]
+    const splits = listValidQuotaSplits(primaries, ss1Count, ss2Count, history)
+    splits.sort(
+      (a, b) => scoreQuotaSplit(a, ss1Rem, ss2Rem, history) - scoreQuotaSplit(b, ss1Rem, ss2Rem, history),
+    )
+
+    for (const split of splits) {
+      for (const c of split.ss1) ss1Rem[c] -= 1
+      for (const c of split.ss2) ss2Rem[c] -= 1
+      history.push({ ss1: [...split.ss1], ss2: [...split.ss2] })
+
+      if (dfs(weekIndex + 1)) {
+        const sec = secondaryPlan.get(date)
+        schedule.set(date, {
+          ss1Primary: split.ss1,
+          ss2Primary: split.ss2,
+          ss2PrimaryCount: ss2Count,
+          secondary: sec?.secondary ?? null,
+          secondaryOnSs1: sec?.onSs1 ?? false,
+        })
+        return true
+      }
+
+      history.pop()
+      for (const c of split.ss1) ss1Rem[c] += 1
+      for (const c of split.ss2) ss2Rem[c] += 1
+    }
+
+    return false
+  }
+
+  if (!dfs(0)) {
+    return buildSundayPrimaryScheduleFallback(sundayDates, primaries, priorHistory, secondaryPlan, weekSlots)
+  }
+
+  return schedule
+}
+
+function buildSundayPrimaryScheduleFallback(sundayDates, primaries, priorHistory, secondaryPlan, weekSlots) {
+  const history = [...priorHistory]
+  const schedule = new Map()
   sundayDates.forEach((date, weekIndex) => {
     const sec = secondaryPlan.get(date)
-    const ss1Count = sec?.onSs1 ? 1 : 2
-    const ss2Count = sec?.onSs1 ? 3 : 2
+    const { ss1: ss1Count, ss2: ss2Count } = weekSlots[weekIndex]
     const split = pickSundaySplitSized(primaries, history, weekIndex, ss1Count, ss2Count)
     history.push({ ss1: [...split.ss1], ss2: [...split.ss2] })
     schedule.set(date, {
       ss1Primary: split.ss1,
       ss2Primary: split.ss2,
+      ss2PrimaryCount: ss2Count,
       secondary: sec?.secondary ?? null,
       secondaryOnSs1: sec?.onSs1 ?? false,
     })
   })
-
   return schedule
+}
+
+function buildSundayPrimarySchedule(sundayDates, catalog, priorAssignments = [], secondaryPlan = new Map()) {
+  const primaries = primaryChoirNames(catalog)
+  if (primaries.length < 2) return new Map()
+
+  const { weekSlots, ss1Quota, ss2Quota } = computePrimaryQuotas(primaries, sundayDates, secondaryPlan)
+  const history = historyFromPrior(priorAssignments, catalog)
+  return solveQuotaSundaySchedule(
+    sundayDates,
+    primaries,
+    weekSlots,
+    ss1Quota,
+    ss2Quota,
+    history,
+    secondaryPlan,
+  )
 }
 
 function composeSundayChoirs(entry) {
@@ -325,7 +495,7 @@ function composeSundayChoirs(entry) {
 
   const ss2Parts = []
   if (entry.secondary && !entry.secondaryOnSs1) ss2Parts.push(entry.secondary)
-  const ss2PrimarySlots = entry.secondary ? (entry.secondaryOnSs1 ? 3 : 2) : 2
+  const ss2PrimarySlots = entry.ss2PrimaryCount ?? 2
   ss2Parts.push(...entry.ss2Primary.slice(0, ss2PrimarySlots))
 
   return {
@@ -634,7 +804,7 @@ export function sundayDayChoirs(assignments, row) {
 
 /**
  * Build choir assignments — phased deterministic rotation:
- * 1. All Sunday primaries (round-robin SS1/SS2)
+ * 1. All Sunday primaries (quota-balanced SS1/SS2 counts, then streak/pair rules)
  * 2. Secondary choirs on two Sundays
  * 3. Tuesday (Worship + rotating primary)
  * 4. Friday (rotating primary, ≠ same week's Tuesday)

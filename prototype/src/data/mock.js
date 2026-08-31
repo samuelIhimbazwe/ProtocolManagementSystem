@@ -20,7 +20,7 @@ export const MOBILE_NAV = [
 
 export const CHOIRS = {
   primary: ['El Bethel Choir', "Ijwi ry'Umwami Yesu Choir", 'Elim Choir', 'Integuza Choir'],
-  secondary: ['Yerusalemu Choir', 'Beulah Choir'],
+  secondary: ['Beulah Choir', 'Yerusalemu Choir'],
   special: ['Hope Choir', 'Worship Team'],
 }
 
