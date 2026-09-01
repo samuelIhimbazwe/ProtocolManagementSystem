@@ -43,8 +43,7 @@ export { usernameFromName }
 
 export async function buildDefaultSchedulePayload(members) {
   const pool = protocolNamePool(members)
-  const teamAssignments = buildMonthlyServiceTeams(pool, PILOT_SERVICES, {
-    shuffle: false,
+  const { teams: teamAssignments, meta: teamEngineMeta } = buildMonthlyServiceTeams(pool, PILOT_SERVICES, {
     serveDaysByName: serveDaysMapFromMembers(members),
   })
   const leadershipReview = teamAssignments
@@ -64,6 +63,7 @@ export async function buildDefaultSchedulePayload(members) {
     choirAssignments: PILOT_CHOIR_ASSIGNMENTS,
     teamAssignments,
     leadershipReview,
+    teamEngineMeta,
   }
 
   const rules = await loadRulesFromDb()

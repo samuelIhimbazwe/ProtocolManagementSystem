@@ -21,11 +21,11 @@ if (names.length < 10) {
   names = [...new Set((payload.teamAssignments ?? []).flatMap((t) => t.members ?? []))]
 }
 
-const teams = buildMonthlyServiceTeams(names, payload.services ?? [], {
-  shuffle: false,
+const { teams, meta } = buildMonthlyServiceTeams(names, payload.services ?? [], {
   serveDaysByName: serveDaysMapFromMembers(memberRows),
 })
 payload.teamAssignments = teams
+payload.teamEngineMeta = meta
 payload.leadershipReview = teams
   .filter((t) => t.kind === 'sunday')
   .slice(0, 4)

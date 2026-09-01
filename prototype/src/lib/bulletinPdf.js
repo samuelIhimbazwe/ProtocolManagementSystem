@@ -160,34 +160,51 @@ export async function downloadDocumentHtmlAsPdf(fullHtml, { fileName = 'document
   return downloadHtmlDocumentAsPdf(`${styles}${body}`, { fileName, widthPx })
 }
 
-/**
- * Renders the on-screen bulletin and downloads a real PDF file.
- */
-export async function downloadBulletinPdf(elementId, { title = 'Bulletin', fileName } = {}) {
-  const el = document.getElementById(elementId)
-  if (!el) {
-    throw new Error('Bulletin not found — switch to Bulletin view first')
-  }
-
-  const host = document.createElement('div')
-  host.setAttribute('aria-hidden', 'true')
-  Object.assign(host.style, {
-    position: 'fixed',
-    left: '-12000px',
-    top: '0',
-    width: '794px',
-    padding: '6px',
-    background: '#ffffff',
-    zIndex: '-1',
-    pointerEvents: 'none',
-  })
-
-  const style = document.createElement('style')
-  style.textContent = `
+function bulletinCaptureStyles({ landscape = false, protocol = false } = {}) {
+  if (protocol && landscape) {
+    return `
     .pmss-bulletin-week-row,
     .pmss-bulletin-service-row {
       display: grid !important;
       grid-template-columns: 1fr 1fr !important;
+    }
+    .pmss-bulletin-week-row--protocol {
+      grid-template-columns: repeat(var(--pmss-protocol-week-cols, 4), minmax(0, 1fr)) !important;
+    }
+    .pmss-bulletin-week-col + .pmss-bulletin-week-col,
+    .pmss-bulletin-service-cell + .pmss-bulletin-service-cell {
+      border-top: none !important;
+      border-left: 1px solid #333 !important;
+    }
+    .pmss-bulletin-week-col--blank,
+    .pmss-bulletin-service-cell--blank { display: none !important; }
+    .pmss-bulletin-week-col--empty { display: none !important; }
+    .pmss-no-print { display: none !important; }
+    .pmss-bulletin-member-list { list-style: none !important; padding-left: 0 !important; margin: 0 !important; font-size: 10.5px !important; line-height: 1.45 !important; }
+    .pmss-bulletin-member-list > li { display: flex !important; align-items: baseline !important; gap: 0.35em !important; padding: 1px 0 !important; }
+    .pmss-bulletin-member-index { flex: 0 0 1.2rem !important; text-align: right !important; line-height: inherit !important; }
+    .pmss-bulletin-logo-img { height: 2.4rem !important; }
+    .pmss-bulletin-masthead { padding-bottom: 6px !important; margin-bottom: 8px !important; }
+    .pmss-bulletin-church-line { font-size: 11px !important; margin-top: 2px !important; }
+    .pmss-bulletin-main-title { font-size: 13px !important; margin-top: 4px !important; }
+    .pmss-bulletin-week-col { padding: 8px 10px 10px !important; }
+    .pmss-bulletin-service-cell { padding: 6px 8px 8px !important; }
+    .pmss-bulletin-service-block { margin-bottom: 10px !important; }
+    .pmss-bulletin-service-bar { font-size: 10px !important; padding: 4px 8px !important; margin-bottom: 4px !important; }
+    .pmss-bulletin-service-bar--igaburo { background-color: #b8ddb8 !important; }
+    .pmss-bulletin-week-heading { font-size: 10.5px !important; padding: 4px 6px !important; margin-bottom: 8px !important; }
+    .pmss-bulletin-signatures { font-size: 8px !important; margin-top: 6px !important; padding: 5px 8px !important; }
+  `
+  }
+
+  return `
+    .pmss-bulletin-week-row,
+    .pmss-bulletin-service-row {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr !important;
+    }
+    .pmss-bulletin-week-row--protocol {
+      grid-template-columns: repeat(var(--pmss-protocol-week-cols, 4), minmax(0, 1fr)) !important;
     }
     .pmss-bulletin-week-col + .pmss-bulletin-week-col,
     .pmss-bulletin-service-cell + .pmss-bulletin-service-cell {
@@ -208,8 +225,44 @@ export async function downloadBulletinPdf(elementId, { title = 'Bulletin', fileN
     .pmss-bulletin-service-cell { padding: 3px 5px 4px !important; }
     .pmss-bulletin-service-block { margin-bottom: 0 !important; }
     .pmss-bulletin-service-bar { font-size: 8px !important; padding: 2px 4px !important; margin-bottom: 1px !important; }
+    .pmss-bulletin-service-bar--igaburo { background-color: #b8ddb8 !important; }
+    .pmss-bulletin-week-heading { font-size: 8px !important; padding: 2px 4px !important; margin-bottom: 2px !important; }
+    .pmss-bulletin-protocol-note { font-size: 7.5px !important; margin-top: 4px !important; padding: 4px 6px !important; background-color: #f5e6a8 !important; }
     .pmss-bulletin-signatures { font-size: 7.5px !important; margin-top: 4px !important; padding: 4px 6px !important; }
   `
+}
+
+/**
+ * Renders the on-screen bulletin and downloads a real PDF file.
+ */
+export async function downloadBulletinPdf(
+  elementId,
+  { title = 'Bulletin', fileName, orientation = 'portrait' } = {},
+) {
+  const el = document.getElementById(elementId)
+  if (!el) {
+    throw new Error('Bulletin not found — switch to Bulletin view first')
+  }
+
+  const landscape = orientation === 'landscape'
+  const protocol = el.classList.contains('pmss-bulletin--protocol')
+  const captureWidth = landscape ? 1120 : 794
+
+  const host = document.createElement('div')
+  host.setAttribute('aria-hidden', 'true')
+  Object.assign(host.style, {
+    position: 'fixed',
+    left: '-12000px',
+    top: '0',
+    width: `${captureWidth}px`,
+    padding: landscape ? '12px 16px' : '6px',
+    background: '#ffffff',
+    zIndex: '-1',
+    pointerEvents: 'none',
+  })
+
+  const style = document.createElement('style')
+  style.textContent = bulletinCaptureStyles({ landscape, protocol })
   const clone = prepareBulletinClone(el)
   host.appendChild(style)
   host.appendChild(clone)
@@ -228,12 +281,16 @@ export async function downloadBulletinPdf(elementId, { title = 'Bulletin', fileN
       logging: false,
       scrollX: 0,
       scrollY: 0,
-      windowWidth: Math.max(clone.scrollWidth, 794),
+      windowWidth: Math.max(clone.scrollWidth, captureWidth),
       windowHeight: Math.max(clone.scrollHeight, 200),
     })
 
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    addCanvasPagesToPdf(pdf, canvas, { marginMm: 6, singlePage: true })
+    const pdf = new jsPDF({
+      orientation: landscape ? 'landscape' : 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    })
+    addCanvasPagesToPdf(pdf, canvas, { marginMm: landscape ? 8 : 6, singlePage: true })
     const name = fileName ?? `pmss-${slugify(title)}.pdf`
     pdf.save(name)
     return { fileName: name }

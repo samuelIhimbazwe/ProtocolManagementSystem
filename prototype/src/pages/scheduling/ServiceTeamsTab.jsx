@@ -14,6 +14,9 @@ import { isDutyAvailable, canServeTeamKind, serveDaysMapFromMembers } from '../.
 import {
   FULL_ROSTER_TEAM_SIZE,
   buildMonthlyServiceTeams,
+  buildTeamSlotsFromServices,
+  computeDutyTargets,
+  countMemberDuties,
   fullRosterKindLabel,
   isFullRosterKind,
   maxTeamSizeForRow,
@@ -39,6 +42,7 @@ export default function ServiceTeamsTab({
   services: servicesProp = [],
   protocolPool: protocolPoolProp,
   serveDaysByName: serveDaysByNameProp,
+  priorTeamMeta = null,
   monthLabel = 'August 2026',
 }) {
   const [format, setFormat] = useDisplayFormat('pmss-view-teams', 'cards')
@@ -78,26 +82,51 @@ export default function ServiceTeamsTab({
   const [replaceFrom, setReplaceFrom] = useState('')
   const [replaceTo, setReplaceTo] = useState('')
 
+  const dutyTargetLabel = useMemo(() => {
+    const slots = buildTeamSlotsFromServices(services)
+    const capacity = slots.length * FULL_ROSTER_TEAM_SIZE
+    const n = protocolPool.length
+    if (!n || !capacity) return null
+    const targets = computeDutyTargets(protocolPool, capacity)
+    const values = [...targets.values()]
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    return min === max ? String(min) : `${min}–${max}`
+  }, [services, protocolPool])
+
+  const tuesdayOnlyCount = useMemo(
+    () => protocolPool.filter((name) => serveDaysByName[name] === 'tuesday').length,
+    [protocolPool, serveDaysByName],
+  )
+
   const active = modal != null ? teams[modal.index] : null
 
-  const runEngine = (shuffle) => {
+  const runEngine = () => {
     if (!hasCalendar) {
       showToast('Generate the monthly calendar first for the month you want')
       return
     }
     try {
-      const built = buildMonthlyServiceTeams(protocolPool, services, { shuffle, serveDaysByName })
+      const { teams: built, meta } = buildMonthlyServiceTeams(protocolPool, services, {
+        serveDaysByName,
+        priorMeta: priorTeamMeta,
+      })
       const withKeys = built.map((t) => ({ ...normalizeTeam(t), _key: teamKey(t) }))
       const fullRoster = withKeys.filter((t) => isFullRosterKind(t.kind)).length
+      const partial = withKeys.filter((t) => isFullRosterKind(t.kind) && t.size < FULL_ROSTER_TEAM_SIZE).length
+      const duties = countMemberDuties(withKeys, protocolPool)
+      const counts = Object.values(duties)
+      const minD = counts.length ? Math.min(...counts) : 0
+      const maxD = counts.length ? Math.max(...counts) : 0
       if (onTeamsBuilt) {
-        onTeamsBuilt(withKeys)
+        onTeamsBuilt(withKeys, meta)
       } else {
         setTeams(withKeys)
       }
+      const partialNote =
+        partial > 0 ? ` · ${partial} roster(s) have open slots for manual fill` : ''
       showToast(
-        shuffle
-          ? `Teams rebuilt for ${monthLabel} — ${fullRoster} services @ ${FULL_ROSTER_TEAM_SIZE} members (no Friday)`
-          : `Teams built for ${monthLabel} — Sunday + Tuesday + Igaburo (${FULL_ROSTER_TEAM_SIZE} each; no Friday)`,
+        `Teams built for ${monthLabel} — ${fullRoster} services · duties ${minD}–${maxD} each${partialNote}`,
       )
     } catch {
       showToast('Not enough protocol members to build teams')
@@ -181,6 +210,7 @@ export default function ServiceTeamsTab({
           result = await downloadBulletinPdf('teams-bulletin', {
             title: 'Service teams bulletin',
             fileName: `pmss-service-teams-bulletin.pdf`,
+            orientation: 'landscape',
           })
         } else {
           result = await downloadServiceTeamsPdf(dutyTeams, { monthLabel })
@@ -261,11 +291,28 @@ export default function ServiceTeamsTab({
       </div>
       <p className="text-sm text-neutral-600 bg-primary-50 border border-primary-100 rounded-card px-4 py-3 pmss-no-print">
         <strong className="text-neutral-900">{protocolPool.length} available protocol members</strong> in roster
-        (sick, pregnant, on leave, and other unavailable members are skipped). Tuesday-only members are assigned to
-        Tuesday services only. Build engine fills <strong>Sunday and Tuesday services</strong> (and Igaburo) with{' '}
-        <strong>{FULL_ROSTER_TEAM_SIZE} members</strong> each (team leader + vice included). Protocol does{' '}
-        <strong>not</strong> serve on Friday — those services are skipped. Works for any month after the calendar is
-        generated.
+        (sick, pregnant, on leave, and other unavailable members are skipped).
+        {tuesdayOnlyCount > 0 ? (
+          <>
+            {' '}
+            <strong>{tuesdayOnlyCount}</strong> serve on <strong>Tuesday only</strong>.
+          </>
+        ) : null}{' '}
+        Build uses <strong>round-robin</strong> — all Sunday services first, then Tuesday and Igaburo.
+        {dutyTargetLabel ? (
+          <>
+            {' '}
+            This month targets <strong>{dutyTargetLabel} duties each</strong>
+            {dutyTargetLabel.includes('3') || dutyTargetLabel.includes('4')
+              ? ' (3 or 4 when the calendar allows)'
+              : ''}
+            ; counts carry to the next month.
+          </>
+        ) : (
+          <> Each member is scheduled fairly when the calendar is ready; counts carry to the next month.</>
+        )}{' '}
+        Rosters aim for <strong>{FULL_ROSTER_TEAM_SIZE} members</strong> (TL + VTL included); open slots stay for
+        manual fill. Protocol does <strong>not</strong> serve on Friday.
       </p>
       <div className="flex flex-wrap gap-2 pmss-no-print">
         {canEdit && (
@@ -273,7 +320,7 @@ export default function ServiceTeamsTab({
             <button
               type="button"
               className="pmss-btn-primary"
-              onClick={() => runEngine(false)}
+              onClick={runEngine}
               disabled={!hasCalendar}
             >
               Build service teams
@@ -281,7 +328,7 @@ export default function ServiceTeamsTab({
             <button
               type="button"
               className="pmss-btn-secondary"
-              onClick={() => runEngine(true)}
+              onClick={runEngine}
               disabled={!hasCalendar}
             >
               <RefreshCw className="w-4 h-4" /> Rebuild teams
@@ -310,7 +357,7 @@ export default function ServiceTeamsTab({
       )}
 
       {format !== 'bulletin' && (
-        <div className="pmss-offscreen-export" aria-hidden="true">
+        <div className="pmss-offscreen-export pmss-offscreen-export--landscape" aria-hidden="true">
           <ServiceTeamsBulletin
             id="teams-bulletin"
             teams={dutyTeams}
@@ -321,6 +368,7 @@ export default function ServiceTeamsTab({
         </div>
       )}
       {format === 'bulletin' ? (
+        <div className="pmss-no-print overflow-x-auto -mx-2 px-2 md:mx-0 md:px-0">
         <ServiceTeamsBulletin
           id="teams-bulletin"
           teams={dutyTeams}
@@ -328,6 +376,7 @@ export default function ServiceTeamsTab({
           canEdit={canEdit}
           onTeamsChange={setTeams}
         />
+        </div>
       ) : format === 'list' ? (
         <ServiceTeamsList
           teams={dutyTeams}

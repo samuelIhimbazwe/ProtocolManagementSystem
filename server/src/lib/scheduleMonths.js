@@ -24,6 +24,14 @@ export function nextMonthKey(monthKey) {
 }
 
 /** @param {string} monthKey YYYY-MM */
+export function previousMonthKey(monthKey) {
+  const [y, m] = String(monthKey ?? '').split('-').map(Number)
+  if (!y || !m) return null
+  const prev = m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 }
+  return `${prev.y}-${String(prev.m).padStart(2, '0')}`
+}
+
+/** @param {string} monthKey YYYY-MM */
 export function monthLabelFromKey(monthKey) {
   try {
     const [y, m] = String(monthKey).split('-').map(Number)
@@ -53,6 +61,7 @@ export function emptyMonthPayload(monthKey) {
     choirPublishedBy: null,
     validationRows: [],
     validationSummary: { passed: 0, warnings: 0, errors: 0, status: 'PENDING' },
+    teamEngineMeta: null,
   }
 }
 

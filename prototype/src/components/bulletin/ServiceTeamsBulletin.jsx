@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import BulletinChurchHeader from './BulletinChurchHeader'
 import BulletinEditable from './BulletinEditable'
 import {
+  groupTeamsByProtocolWeek,
   protocolServiceTitle,
   teamBulletinDate,
 } from '../../lib/bulletinWeeks'
-import { maxTeamSizeForRow } from '../../data/teamEngine'
+import { FULL_ROSTER_TEAM_SIZE, isFullRosterKind, maxTeamSizeForRow } from '../../data/teamEngine'
 
 const MONTH_NUM = {
   january: 1,
@@ -22,6 +23,15 @@ const MONTH_NUM = {
   december: 12,
 }
 
+const RW_WEEK = [
+  '',
+  'ICYUMWERU CYA MBERE',
+  'ICYUMWERU CYA KABIRI',
+  'ICYUMWERU CYA GATATU',
+  'ICYUMWERU CYA KANE',
+  'ICYUMWERU CYA GATANU',
+]
+
 function monthNumberFromLabel(monthLabel) {
   const iso = String(monthLabel).match(/(\d{4})-(\d{1,2})/)
   if (iso) return Number(iso[2])
@@ -30,35 +40,6 @@ function monthNumberFromLabel(monthLabel) {
     .match(/january|february|march|april|may|june|july|august|september|october|november|december/)
   if (named) return MONTH_NUM[named[0]]
   return 8
-}
-
-function serviceSortKey(team) {
-  const name = team.serviceName ?? team.date ?? ''
-  if (/Tuesday/i.test(name)) return 1
-  if (/Friday/i.test(name)) return 2
-  if (/Sunday Service 1/i.test(name)) return 3
-  if (/Sunday Service 2/i.test(name)) return 4
-  if (/Igaburo/i.test(name)) return 5
-  return 9
-}
-
-function sortTeamsForBulletin(teams) {
-  return [...(teams ?? [])].sort((a, b) => {
-    const pa = teamBulletinDate(a)
-    const pb = teamBulletinDate(b)
-    const ta = pa ? Date.UTC(pa.year, pa.month, pa.day) : 0
-    const tb = pb ? Date.UTC(pb.year, pb.month, pb.day) : 0
-    if (ta !== tb) return ta - tb
-    return serviceSortKey(a) - serviceSortKey(b)
-  })
-}
-
-function pairItems(items) {
-  const rows = []
-  for (let i = 0; i < items.length; i += 2) {
-    rows.push([items[i] ?? null, items[i + 1] ?? null])
-  }
-  return rows
 }
 
 export { BulletinEditable }
@@ -82,9 +63,13 @@ export function orderedBulletinMembers(team) {
 }
 
 function roleLabelForSlot(index) {
-  if (index === 0) return ' (Team lead)'
-  if (index === 1) return ' (V/s Team lead)'
+  if (index === 0) return ' (Team Lead)'
+  if (index === 1) return ' (V/s Team Lead)'
   return ''
+}
+
+function isIgaburoTeam(team) {
+  return /Igaburo/i.test(team.serviceName ?? team.date ?? '')
 }
 
 function ServiceBlock({
@@ -101,13 +86,14 @@ function ServiceBlock({
   const defaultTitle = protocolServiceTitle(team, parts)
   const title = titleOverride ?? defaultTitle
   const ordered = orderedBulletinMembers(team)
-  const slots = canEdit
-    ? Array.from({ length: Math.max(ordered.length, 1) }, (_, i) => ordered[i] ?? '')
-    : ordered
+  const slotCount = isFullRosterKind(team.kind) ? FULL_ROSTER_TEAM_SIZE : Math.max(ordered.length, 1)
+  const slots = Array.from({ length: slotCount }, (_, i) => ordered[i] ?? '')
 
   return (
     <div className="pmss-bulletin-service-block">
-      <div className="pmss-bulletin-service-bar">
+      <div
+        className={`pmss-bulletin-service-bar${isIgaburoTeam(team) ? ' pmss-bulletin-service-bar--igaburo' : ''}`}
+      >
         <span aria-hidden>➤</span>{' '}
         <BulletinEditable
           value={title}
@@ -151,7 +137,7 @@ function ServiceBlock({
 }
 
 /**
- * ADEPR-style protocol bulletin: services packed 2-up by date (no empty week columns).
+ * ADEPR-style protocol bulletin — weekly columns (Tue → Igaburo → Sun 1 → Sun 2).
  */
 export default function ServiceTeamsBulletin({
   id,
@@ -168,26 +154,13 @@ export default function ServiceTeamsBulletin({
   const [titleOverrides, setTitleOverrides] = useState({})
   const [memberOverrides, setMemberOverrides] = useState({})
   const [roleOverrides, setRoleOverrides] = useState({})
-  const [footerLines, setFooterLines] = useState([
-    `Byateguwe na Minisiteri y' Abadiyakoni · ${monthLabel}`,
-    "Byagenzuwe n'Umuyobozi w'Itorero",
-    "Byemejwe n'Umushumba w'Itorero",
-  ])
 
   useEffect(() => {
     setTitle(defaultTitle)
   }, [defaultTitle])
 
-  useEffect(() => {
-    setFooterLines((prev) => {
-      const next = [...prev]
-      next[0] = `Byateguwe na Minisiteri y' Abadiyakoni · ${monthLabel}`
-      return next
-    })
-  }, [monthLabel])
-
-  const orderedTeams = useMemo(() => sortTeamsForBulletin(teams), [teams])
-  const pairs = useMemo(() => pairItems(orderedTeams), [orderedTeams])
+  const protocolWeeks = useMemo(() => groupTeamsByProtocolWeek(teams), [teams])
+  const weekCount = Math.max(protocolWeeks.length, 1)
 
   const patchTeamMembers = (teamKey, team, slotIndex, newName) => {
     setMemberOverrides((prev) => {
@@ -224,7 +197,11 @@ export default function ServiceTeamsBulletin({
   }
 
   return (
-    <article id={id} className="pmss-bulletin pmss-bulletin--protocol">
+    <article
+      id={id}
+      className="pmss-bulletin pmss-bulletin--protocol"
+      style={{ '--pmss-protocol-week-cols': weekCount }}
+    >
       {canEdit && (
         <p className="pmss-bulletin-edit-hint pmss-no-print">
           Click any text to edit — church name, title, service lines, names, and footer.
@@ -248,61 +225,45 @@ export default function ServiceTeamsBulletin({
       />
 
       <div className="pmss-bulletin-protocol-frame">
-        {pairs.length === 0 ? (
+        {protocolWeeks.length === 0 ? (
           <p className="pmss-bulletin-week-empty px-3 py-2">No services</p>
         ) : (
-          pairs.map((pair, idx) => (
-            <div key={idx} className="pmss-bulletin-service-row">
-              {pair.map((team, col) => {
-                if (!team) {
-                  return <div key={`empty-${col}`} className="pmss-bulletin-service-cell pmss-bulletin-service-cell--blank" />
-                }
-                const key = team._key ?? team.date
-                return (
-                  <div key={key} className="pmss-bulletin-service-cell">
-                    <ServiceBlock
-                      team={team}
-                      titleOverride={titleOverrides[key]}
-                      memberOverrides={memberOverrides[key]}
-                      roleOverrides={roleOverrides[key]}
-                      canEdit={canEdit}
-                      onTitleChange={(v) => setTitleOverrides((t) => ({ ...t, [key]: v }))}
-                      onMemberChange={(slot, v) => patchTeamMembers(key, team, slot, v)}
-                      onRoleChange={(slot, v) =>
-                        setRoleOverrides((prev) => ({
-                          ...prev,
-                          [key]: { ...(prev[key] ?? {}), [slot]: v },
-                        }))
-                      }
-                    />
-                  </div>
-                )
-              })}
-            </div>
-          ))
+          <div className="pmss-bulletin-week-row pmss-bulletin-week-row--protocol">
+            {protocolWeeks.map(({ weekNum, items }) => (
+              <div key={weekNum} className="pmss-bulletin-week-col">
+                <div className="pmss-bulletin-week-heading">
+                  {RW_WEEK[weekNum] ?? `ICYUMWERU ${weekNum}`} ({weekNum})
+                </div>
+                {items.length === 0 ? (
+                  <p className="pmss-bulletin-week-empty">—</p>
+                ) : (
+                  items.map((team) => {
+                    const key = team._key ?? team.date
+                    return (
+                      <ServiceBlock
+                        key={key}
+                        team={team}
+                        titleOverride={titleOverrides[key]}
+                        memberOverrides={memberOverrides[key]}
+                        roleOverrides={roleOverrides[key]}
+                        canEdit={canEdit}
+                        onTitleChange={(v) => setTitleOverrides((t) => ({ ...t, [key]: v }))}
+                        onMemberChange={(slot, v) => patchTeamMembers(key, team, slot, v)}
+                        onRoleChange={(slot, v) =>
+                          setRoleOverrides((prev) => ({
+                            ...prev,
+                            [key]: { ...(prev[key] ?? {}), [slot]: v },
+                          }))
+                        }
+                      />
+                    )
+                  })
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
-
-      <footer className="pmss-bulletin-signatures">
-        {footerLines.map((line, i) => (
-          <p key={i}>
-            <BulletinEditable
-              value={line}
-              onChange={
-                canEdit
-                  ? (v) =>
-                      setFooterLines((lines) => {
-                        const next = [...lines]
-                        next[i] = v
-                        return next
-                      })
-                  : undefined
-              }
-              disabled={!canEdit}
-            />
-          </p>
-        ))}
-      </footer>
     </article>
   )
 }

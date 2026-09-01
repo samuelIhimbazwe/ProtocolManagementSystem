@@ -223,7 +223,7 @@ export const CHOIR_ASSIGNMENTS = [
   { service: 'Sunday Service 2', date: '30 Aug', choirs: 'Beulah Choir, Elim Choir, El Bethel Choir', status: 'Assigned' },
 ]
 
-export const TEAM_ASSIGNMENTS = buildMonthlyServiceTeams(PROTOCOL_NAMES, SERVICES, { shuffle: false })
+export const TEAM_ASSIGNMENTS = buildMonthlyServiceTeams(PROTOCOL_NAMES, SERVICES, {}).teams
 
 export const LEADERSHIP = TEAM_ASSIGNMENTS.filter((t) => t.kind === 'sunday')
   .slice(0, 4)

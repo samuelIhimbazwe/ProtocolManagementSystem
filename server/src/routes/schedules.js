@@ -67,6 +67,7 @@ async function attachValidation(payload) {
   const teamAssignments = sanitizeTeamAssignments(payload.teamAssignments ?? [], {
     protocolPool,
     serveDaysByName,
+    teamEngineMeta: payload.teamEngineMeta,
   })
   const leadershipReview = teamAssignments
     .filter((t) => t.kind === 'sunday')

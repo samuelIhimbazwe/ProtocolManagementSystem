@@ -160,8 +160,68 @@ export function protocolServiceTitle(team, parts) {
   const name = team.serviceName ?? ''
   if (/Tuesday/i.test(name)) return `Iteraniro ryo kuwa kabiri ${date}`
   if (/Friday/i.test(name)) return `Iteraniro ryo kuwa gatanu ${date}`
-  if (/Sunday Service 1/i.test(name)) return `Iteraniro rya mbere ku cyumweru ${date}`
-  if (/Sunday Service 2/i.test(name)) return `Iteraniro rya kabiri ku cyumweru ${date}`
-  if (/Igaburo/i.test(name)) return `Igaburo ryera ${date}`
+  if (/Sunday Service 1/i.test(name)) return `Iteraniro rya mbere(1) kucyumweru ${date}`
+  if (/Sunday Service 2/i.test(name)) return `Iteraniro rya kabiri(2) kucyumweru ${date}`
+  if (/Igaburo/i.test(name)) return `Iteraniro ryo ku igaburo ryera ${date}`
   return `${name} ${date}`
+}
+
+function dateKeyFromParts(parts) {
+  if (!parts) return null
+  return `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+}
+
+function utcFromParts(parts) {
+  return Date.UTC(parts.year, parts.month, parts.day)
+}
+
+/**
+ * ADEPR protocol bulletin weeks: each column = one Sunday anchor + its Tuesday (+ Igaburo if any).
+ */
+export function groupTeamsByProtocolWeek(teams) {
+  const sorted = [...(teams ?? [])].sort((a, b) => {
+    const pa = teamBulletinDate(a)
+    const pb = teamBulletinDate(b)
+    const ta = pa ? utcFromParts(pa) : 0
+    const tb = pb ? utcFromParts(pb) : 0
+    if (ta !== tb) return ta - tb
+    return serviceSortKey(a) - serviceSortKey(b)
+  })
+
+  const sundayAnchors = []
+  sorted.forEach((team) => {
+    if (!/Sunday Service 1/i.test(team.serviceName ?? '')) return
+    const parts = teamBulletinDate(team)
+    if (!parts) return
+    const key = dateKeyFromParts(parts)
+    if (!sundayAnchors.some((a) => a.key === key)) {
+      sundayAnchors.push({ key, parts, utc: utcFromParts(parts) })
+    }
+  })
+  sundayAnchors.sort((a, b) => a.utc - b.utc)
+
+  return sundayAnchors.map((anchor, weekIndex) => {
+    const prevUtc = weekIndex > 0 ? sundayAnchors[weekIndex - 1].utc : 0
+    const items = sorted.filter((team) => {
+      const parts = teamBulletinDate(team)
+      if (!parts) return false
+      const utc = utcFromParts(parts)
+      const svc = team.serviceName ?? ''
+
+      if (/Sunday Service/i.test(svc)) return utc === anchor.utc
+      if (/Tuesday/i.test(svc) || /Igaburo/i.test(svc)) {
+        return utc > prevUtc && utc <= anchor.utc
+      }
+      return false
+    })
+
+    items.sort((a, b) => {
+      const ta = utcFromParts(teamBulletinDate(a))
+      const tb = utcFromParts(teamBulletinDate(b))
+      if (ta !== tb) return ta - tb
+      return serviceSortKey(a) - serviceSortKey(b)
+    })
+
+    return { weekNum: weekIndex + 1, anchor, items }
+  })
 }

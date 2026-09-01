@@ -21,7 +21,7 @@ import { useMembers } from '../context/MembersContext'
 import { isDutyAvailable, serveDaysMapFromMembers } from '../lib/memberAvailability'
 import { USE_API } from '../api/config'
 import { publishSchedule, archiveSchedule, makeScheduleMonthPublic, publishChoirSchedule } from '../api/client'
-import { fetchScheduleHistory, saveScheduleDraft, validateScheduleDraft } from '../api/schedule'
+import { fetchScheduleHistory, saveScheduleDraft, validateScheduleDraft, fetchCurrentSchedule } from '../api/schedule'
 import { PUBLISH_INFO, SCHEDULE_HISTORY } from '../data/mock'
 import { normalizeTeam } from '../components/TeamCardActions'
 import ScheduleDownloadMenu from '../components/ScheduleDownloadMenu'
@@ -37,7 +37,7 @@ import {
 } from '../lib/scheduleExport'
 import { buildMonthlyServices, monthLabelFromKey } from '../lib/monthlyCalendar'
 import { isFullRosterKind } from '../data/teamEngine'
-import { isChoirPublished } from '../lib/scheduleMonths'
+import { isChoirPublished, previousMonthKey } from '../lib/scheduleMonths'
 
 const TABS = [
   { id: 'calendar', label: 'Calendar', icon: Calendar },
@@ -131,7 +131,7 @@ export default function SchedulingPage() {
   )
 
   const applyBuiltTeams = useCallback(
-    (builtTeams) => {
+    (builtTeams, teamEngineMeta) => {
       const cleaned = (builtTeams ?? []).map(({ _key, ...rest }) => rest)
       const review = cleaned
         .filter((t) => isFullRosterKind(t.kind))
@@ -145,6 +145,7 @@ export default function SchedulingPage() {
         ...p,
         teamAssignments: cleaned,
         leadershipReview: review,
+        teamEngineMeta: teamEngineMeta ?? p.teamEngineMeta ?? null,
       }))
     },
     [updatePayload],
@@ -165,6 +166,31 @@ export default function SchedulingPage() {
   const [calendarMonth, setCalendarMonth] = useState(payload.monthKey ?? '2026-08')
   const [leaderModal, setLeaderModal] = useState(null) // { index, field: 'tl'|'vtl' }
   const [leaderPick, setLeaderPick] = useState('')
+  const [priorTeamMeta, setPriorTeamMeta] = useState(null)
+
+  useEffect(() => {
+    const mk = payload?.monthKey ?? calendarMonth
+    const prevKey = previousMonthKey(mk)
+    if (!prevKey) {
+      setPriorTeamMeta(null)
+      return
+    }
+    if (!USE_API) {
+      setPriorTeamMeta(null)
+      return
+    }
+    let cancelled = false
+    fetchCurrentSchedule(prevKey)
+      .then((data) => {
+        if (!cancelled) setPriorTeamMeta(data.payload?.teamEngineMeta ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setPriorTeamMeta(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [payload?.monthKey, calendarMonth])
 
   const liveMonthKey = monthsMeta?.liveMonthKey ?? '2026-08'
   const nextMonthKeyVal = monthsMeta?.nextMonthKey ?? null
@@ -314,6 +340,7 @@ export default function SchedulingPage() {
       choirAssignments: [],
       teamAssignments: [],
       leadershipReview: [],
+      teamEngineMeta: null,
       choirStatus: 'draft',
       choirPublishedAt: null,
       choirPublishedBy: null,
@@ -703,6 +730,7 @@ export default function SchedulingPage() {
             services={services}
             protocolPool={protocolPool}
             serveDaysByName={serveDaysByName}
+            priorTeamMeta={priorTeamMeta}
             monthLabel={payload.monthLabel ?? monthLabelFromKey(payload.monthKey ?? calendarMonth)}
           />
         </div>

@@ -120,6 +120,10 @@
     z-index: -1;
   }
 
+  .pmss-offscreen-export--landscape {
+    width: 1120px;
+  }
+
   [data-theme='a'] .pmss-sidebar {
     background: linear-gradient(180deg, rgb(var(--pmss-primary-800)) 0%, rgb(var(--pmss-primary-700)) 55%, #152536 100%);
     border-right: 1px solid rgb(16 42 67 / 0.4);
@@ -518,7 +522,38 @@
     @apply max-w-5xl;
   }
   .pmss-bulletin--protocol {
-    @apply max-w-4xl;
+    @apply max-w-none w-full mx-auto;
+    max-width: min(100%, 72rem);
+    padding: 1.25rem 1.25rem;
+  }
+  @media (min-width: 1024px) {
+    .pmss-bulletin.pmss-bulletin--protocol {
+      padding: 1.5rem 2rem;
+    }
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-protocol-frame {
+    @apply rounded-sm;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-week-col {
+    @apply px-3 py-3 md:px-4 md:py-4;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-week-heading {
+    @apply text-sm py-2.5 px-3 mb-4 mx-0;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-service-block {
+    @apply mb-5 last:mb-2;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-service-bar {
+    @apply text-sm py-2 px-3 mb-2;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-member-list {
+    @apply text-[13px] leading-relaxed;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-member-list > li {
+    @apply py-[0.12rem] gap-1.5;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-member-index {
+    width: 1.35rem;
   }
   .pmss-bulletin-edit-hint {
     @apply text-xs text-neutral-500 mb-3 px-3 py-2 rounded-lg bg-neutral-50 border border-neutral-200;
@@ -566,6 +601,24 @@
   .pmss-bulletin-service-row {
     @apply grid grid-cols-2;
   }
+  .pmss-bulletin-week-row--protocol {
+    grid-template-columns: repeat(var(--pmss-protocol-week-cols, 4), minmax(0, 1fr));
+  }
+  @media (max-width: 900px) {
+    .pmss-bulletin-week-row--protocol {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 901px) {
+    .pmss-bulletin--protocol .pmss-bulletin-week-col + .pmss-bulletin-week-col {
+      @apply border-l border-neutral-800 border-t-0;
+    }
+  }
+  @media (max-width: 520px) {
+    .pmss-bulletin-week-row--protocol {
+      grid-template-columns: 1fr;
+    }
+  }
   .pmss-bulletin-week-row + .pmss-bulletin-week-row,
   .pmss-bulletin-service-row + .pmss-bulletin-service-row {
     @apply border-t border-neutral-800;
@@ -573,6 +626,9 @@
   .pmss-bulletin-week-col,
   .pmss-bulletin-service-cell {
     @apply px-2 pb-2 md:px-2.5 md:pb-2;
+  }
+  .pmss-bulletin-week-col {
+    @apply align-top;
   }
   .pmss-bulletin-week-col + .pmss-bulletin-week-col,
   .pmss-bulletin-service-cell + .pmss-bulletin-service-cell {
@@ -599,6 +655,9 @@
   .pmss-bulletin-service-bar {
     @apply text-xs font-semibold px-2 py-1 mb-1 border border-neutral-500;
     background-color: #dce8f3;
+  }
+  .pmss-bulletin-service-bar--igaburo {
+    background-color: #b8ddb8;
   }
   .pmss-bulletin-service-title {
     @apply font-semibold;
@@ -696,6 +755,10 @@
     @apply mt-4 pt-3 border-t border-neutral-400 text-xs text-neutral-700 space-y-0.5;
     background-color: #f0f0f0;
     padding: 0.65rem 0.75rem;
+  }
+  .pmss-bulletin-protocol-note {
+    @apply mt-3 text-xs font-semibold text-center border border-neutral-700 px-3 py-2;
+    background-color: #f5e6a8;
   }
 
   /* List view (Cards | List | Bulletin) */
@@ -1154,6 +1217,10 @@
 }
 
 @media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
   body * {
     visibility: hidden;
   }
@@ -1180,6 +1247,25 @@
   .pmss-bulletin-service-row {
     display: grid !important;
     grid-template-columns: 1fr 1fr !important;
+  }
+  .pmss-bulletin-week-row--protocol {
+    grid-template-columns: repeat(var(--pmss-protocol-week-cols, 4), minmax(0, 1fr)) !important;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-member-list {
+    font-size: 11px !important;
+    line-height: 1.45 !important;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-service-bar {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+    margin-bottom: 4px !important;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-week-heading {
+    font-size: 11px !important;
+    margin-bottom: 8px !important;
+  }
+  .pmss-bulletin--protocol .pmss-bulletin-service-block {
+    margin-bottom: 10px !important;
   }
   .pmss-bulletin-week-col + .pmss-bulletin-week-col,
   .pmss-bulletin-service-cell + .pmss-bulletin-service-cell {
